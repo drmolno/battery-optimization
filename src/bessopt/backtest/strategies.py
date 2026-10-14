@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 
 from bessopt.config import BatterySpec
@@ -107,3 +108,80 @@ class PointForecast:
         fc = slots_to_grid(self.forecasts.loc[pd.Timestamp(day)], grid)
         res = self.dispatch.solve(fc, soc0=soc0)
         return res.schedule[["charge_mw", "discharge_mw"]]
+
+
+class ScenarioSource:
+    """Daily joint price scenarios from quantile forecasts and a Gaussian copula.
+
+    ``Q``: (date, tau) x 96-slot quantile forecasts; ``F``: LEAR point
+    forecasts and ``Y``: realized prices (day x slot), used only for days
+    before the delivery day to estimate the copula. Draws are seeded per day,
+    so strategies sharing a source see identical scenarios.
+    """
+
+    def __init__(
+        self,
+        Q,
+        F,
+        Y,
+        n_scen: int = 50,
+        calib_days: int = 182,
+        seed: int = 0,
+        copula: bool = True,
+        moment_match: bool = False,
+    ):
+        self.Q, self.F, self.Y = Q, F, Y
+        self.n_scen, self.calib_days, self.seed, self.copula = n_scen, calib_days, seed, copula
+        self.moment_match = moment_match
+        self._cache: dict = {}
+
+    def __call__(self, day: dt.date, grid: pd.DatetimeIndex):
+        from bessopt.forecast.features import scenarios_to_grid
+        from bessopt.forecast.probabilistic import copula_correlation, distribution_mean, sample_scenarios
+
+        key = (day, len(grid))
+        if key not in self._cache:
+            d = pd.Timestamp(day)
+            q = self.Q.loc[d].to_numpy()
+            R = copula_correlation(self.F, self.Y, d, self.calib_days) if self.copula else None
+            rng = np.random.default_rng([self.seed, d.toordinal()])
+            X = sample_scenarios(q, self.n_scen, R, rng)
+            if self.moment_match:
+                # Remove Monte Carlo noise in the per-slot mean; keeps spread
+                # and dependence. Sample noise in the mean otherwise shows up
+                # as spurious quarter-hour spreads the optimizer trades on.
+                X = X - X.mean(axis=0) + distribution_mean(q)
+            self._cache = {key: scenarios_to_grid(X, grid)}  # keep only the latest day
+        return self._cache[key]
+
+
+class ExpectedValue:
+    """Deterministic dispatch against the scenario mean (certainty equivalent)."""
+
+    name = "expected_value"
+
+    def __init__(self, source: ScenarioSource, spec: BatterySpec = BatterySpec(), solver: str | None = None):
+        self.source = source
+        self.dispatch = DeterministicDispatch(spec, solver)
+
+    def schedule(self, day, grid, soc0, known_prices, actual_prices=None):
+        mean = pd.Series(self.source(day, grid).mean(axis=0), index=grid)
+        return self.dispatch.solve(mean, soc0=soc0).schedule[["charge_mw", "discharge_mw"]]
+
+
+class StochasticCurves:
+    """Two-stage stochastic bidding with price-quantity curves."""
+
+    name = "stochastic_curves"
+
+    def __init__(self, source: ScenarioSource, spec: BatterySpec = BatterySpec(), solver: str | None = None, **kw):
+        from bessopt.optim.stochastic import StochasticBidding
+
+        self.source = source
+        self.model = StochasticBidding(spec, solver, **kw)
+        self.solve_seconds: list[float] = []
+
+    def schedule(self, day, grid, soc0, known_prices, actual_prices=None):
+        res = self.model.solve(self.source(day, grid), grid, soc0=soc0)
+        self.solve_seconds.append(res.solve_seconds)
+        return res.curves

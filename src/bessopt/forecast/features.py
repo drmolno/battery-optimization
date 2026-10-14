@@ -57,6 +57,14 @@ def slots_to_grid(values: pd.Series, grid: pd.DatetimeIndex) -> pd.Series:
     return pd.Series(out.to_numpy(), index=grid, name="forecast")
 
 
+def scenarios_to_grid(X: np.ndarray, grid: pd.DatetimeIndex) -> np.ndarray:
+    """Map (S x 96 slot) scenarios onto a delivery day's grid -> (S x T)."""
+    df = pd.DataFrame(X.T, index=QH_SLOTS)
+    if len(grid) > 1 and infer_resolution(grid) == pd.Timedelta(hours=1):
+        df = df.groupby(df.index.str[:2] + ":00").mean()
+    return df.reindex(grid.strftime("%H:%M")).ffill().bfill().to_numpy().T
+
+
 def _lag(m: pd.DataFrame, days: int, prefix: str) -> pd.DataFrame:
     out = m.copy()
     out.index = out.index + pd.Timedelta(days=days)

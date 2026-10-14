@@ -94,14 +94,75 @@ About 14 % of the attainable value lies within the hour. The 15-minute
 forecast captures part of it: it beats its own hourly average by about
 90 EUR/day and wins on 71 % of days.
 
+### Probabilistic forecasts and stochastic bidding
+
+**Forecast distribution.** Per-slot predictive quantiles are LEAR plus
+empirical quantiles of recent LEAR errors (asinh space, 182-day window,
+pooled over +-2 neighbouring quarter-hours, centred so the median equals
+LEAR). Quantile Regression Averaging (QRA) was evaluated as an alternative
+and was no better. Over the test period the pinball loss is 6.10 (hourly
+era) and 7.28 (15-min era). The 90 % intervals cover 90 % and 87 %, so they
+are slightly narrow in the 15-minute era.
+
+**Scenarios.** 50 joint daily price paths per day from a Gaussian copula,
+whose correlation is estimated from rank-normal scores of recent errors with
+Ledoit-Wolf shrinkage. Compared with sampling each quarter-hour independently,
+the copula scenarios score 3 % better on the energy score and 15-23 % better
+on the variogram score, which measures dependence between slots. Scenario
+means are moment-matched to the exact distribution mean.
+
+![Scenarios](docs/scenarios_2026-05-28.png)
+
+**Bidding.** Two-stage stochastic program:
+
+- *First stage:* monotone price-quantity curves with K = 8 breakpoints per
+  period, placed at quantiles of the scenario prices.
+- *Second stage:* per-scenario dispatch and SoC, which must be feasible in
+  every scenario.
+
+It is solved as an LP using the convex hull `c + d <= P` of the
+charge/discharge exclusion. Against the exact MILP (lazy binaries) the
+in-sample gap is 0.5 % at about 60x the cost. Curves are cleared at realized
+prices; any dispatch that is physically infeasible is settled as imbalance
+at a 50 EUR/MWh penalty.
+
+| Strategy (650 days) | EUR/day | Share of PF<br>hourly / 15-min | vs expected value |
+|---|---:|---:|---:|
+| LEAR point forecast (≈ predictive median) | 1,623 | 85.4 % / 78.1 % | +16.4 |
+| Stochastic curves, K = 8, S = 50 | 1,609 | 84.7 % / 77.3 % | +2.1 ± 0.9 |
+| Expected value: schedule on predictive mean | 1,607 | 84.7 % / 77.2 % | 0 |
+
+Findings:
+
+- **Value of the stochastic solution (VSS) is about 0.1 %.** Price-dependent
+  curves beat the expected-value schedule by 2.1 ± 0.9 EUR/day (out of
+  sample). The curves were imbalanced for only 0.75 EUR/day on average.
+- **Median beats mean.** The schedule on the predictive median (LEAR) beats
+  the schedule on the predictive mean by 16 ± 5 EUR/day. Theory says the mean
+  should win for a fixed schedule, since profit is linear in price. On
+  average the mean is in fact better calibrated (bias −1.0 vs −2.9 EUR/MWh),
+  so the difference likely comes from how errors are placed within the day,
+  not from overall bias. This is open.
+- **Interpretation.** For a price-taking 10 MW battery in day-ahead alone,
+  almost all of the attainable value comes from forecasting the daily price
+  shape. Reacting to realized prices through bid curves adds little, because
+  the battery's profit depends on spreads across the day, and a per-period
+  curve can't condition on the other periods' prices. The case for
+  probabilistic models is therefore stronger for risk management and for
+  co-optimization with reserves (FCR-D), where the trade-off is explicitly
+  about uncertainty.
+
 ## Roadmap
 
 1. ~~Data layer, time grid, deterministic MILP, baseline backtests~~
 2. ~~ENTSO-E features (load and wind forecasts, neighbouring zones), 15-minute LEAR~~
-3. Probabilistic forecasts (quantile models) and scenario generation (copula)
-4. Two-stage stochastic bidding with price-quantity curves; VSS, EVPI
+3. ~~Probabilistic forecasts (empirical residuals, QRA) and copula scenarios~~
+4. ~~Two-stage stochastic bidding with price-quantity curves; VSS~~
 5. Degradation modelling, terminal SoC valuation
 6. Joint day-ahead + FCR-D capacity allocation
+7. Project economics: NPV/IRR with capex, opex, grid fees, capacity fade and
+   cell replacement; sensitivity to capex, degradation cost and spread
+   compression
 
 ## Usage
 
@@ -112,7 +173,12 @@ cp .env.example .env              # add ENTSOE_API_KEY, choose solver
 pytest
 python scripts/fetch_data.py --start 2021-01-01      # cache ENTSO-E data
 python scripts/run_lear.py --start 2025-01-01 --end 2026-10-13
+python scripts/run_probabilistic.py --start 2025-01-01 --end 2026-10-13
+python scripts/run_stochastic.py --start 2025-01-01 --end 2026-10-13 --moment-match --tag full
 ```
+
+`run_probabilistic.py` needs out-of-sample LEAR forecasts for a calibration
+period before `--start`. Produce them with `run_lear.py` from 2024-06-01.
 
 HiGHS is the default solver so the project runs without a commercial
 license; set `BESSOPT_SOLVER=GUROBI` to use Gurobi.
@@ -129,7 +195,9 @@ src/bessopt/
   forecast/features.py  gate-closure-safe daily design matrices (96 slots)
   forecast/lear.py      LEAR model and rolling out-of-sample loop
   forecast/evaluate.py  MAE / rMAE at native resolution
+  forecast/probabilistic.py  quantiles (ER, QRA), Gaussian copula, scoring
   optim/battery.py      deterministic dispatch MILP (cvxpy, DPP-parametrized)
+  optim/stochastic.py   two-stage stochastic bid curves (K-point grid)
   backtest/             strategies, rolling backtest, settlement
 scripts/                runnable experiments
 tests/
