@@ -27,17 +27,18 @@ def main() -> None:
     ap.add_argument("--refit-every", type=int, default=7)
     ap.add_argument("--solver", default=None)
     ap.add_argument("--reuse", action="store_true")
+    ap.add_argument("--holidays", action="store_true", help="add Swedish holiday flags (no measurable gain)")
     args = ap.parse_args()
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    tag = f"lear_w{args.window}_r{args.refit_every}"
+    tag = f"lear_w{args.window}_r{args.refit_every}" + ("_hol" if args.holidays else "")
     fc_path = RESULTS_DIR / f"forecasts_{tag}.parquet"
     start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
 
     if args.reuse and fc_path.exists():
         fc = pd.read_parquet(fc_path)
     else:
-        X, Y = load_dataset("2021-01-01", end + dt.timedelta(days=2))
+        X, Y = load_dataset("2021-01-01", end + dt.timedelta(days=2), holidays=args.holidays)
         print(f"Dataset: X {X.shape}, Y {Y.dropna().shape}. Fitting {tag} ...")
         fc, coefs = rolling_forecast(X, Y, start, end, args.window, args.refit_every)
         fc.to_parquet(fc_path)

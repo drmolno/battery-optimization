@@ -211,8 +211,8 @@ costs, and every run was charged the true cost (LEAR forecast, 650 days):
 
 **LEAR = LASSO-Estimated AutoRegressive model.** It is a linear regression
 of tomorrow's price on many past prices (the *autoregressive* part) and on
-other information such as load and wind forecasts, fitted with the LASSO.
-The LASSO adds a penalty on the absolute size of the coefficients, which
+other information such as load and wind forecasts, fitted with LASSO (least
+absolute shrinkage and selection operator). LASSO adds a penalty on the absolute size of the coefficients, which
 sets most of them exactly to zero, so the data picks the few inputs that
 matter. LEAR was proposed by Uniejewski, Nowotarski and Weron (2016). Lago,
 Marcjasz, De Schutter and Weron (2021) made it the reference benchmark for
@@ -229,8 +229,10 @@ $$
 
 so the 18:00 price can depend on the inputs differently from the 03:00
 price. All 96 models see the same input vector x̃_D. The penalty λ_h is
-chosen per model by AIC (Akaike information criterion) along the LARS path,
-the sequence of LASSO solutions as λ decreases.
+chosen per model by AIC (Akaike information criterion) along the LARS (least
+angle regression) path: the LASSO solution changes piecewise linearly in λ,
+and LARS computes all of it in about the cost of one least-squares fit, so
+the AIC can be evaluated at every breakpoint.
 
 **Inputs** (344 candidates, all known at gate closure, 12:00 on D-1):
 
@@ -287,6 +289,26 @@ which breaks the LARS algorithm.
 | Penalty | AIC on the LARS path, then refit with coordinate descent | AIC on the LARS path, solution taken directly from the path (same estimate in principle) |
 | Extra | | 15-minute-era dummy, imputation flag |
 
+**Limitation: one set of coefficients for all weekdays.** Weekdays enter
+only through the dummies, which shift the level: "Sundays are lower by this
+much". The *weights* on the inputs are shared. So the model cannot express,
+for example, that for a Monday yesterday (a Sunday) is a weaker guide than
+for a Wednesday, and last week's Monday a stronger one. The D-7 lag
+("same weekday last week") and the Monday dummy partly compensate.
+Weekday-specific weights, via interaction inputs such as "D-1 average price
+× Monday" that LASSO may select, are left as further work. Separate models
+per weekday are not viable: each would have only about 104 training days,
+fewer than inputs.
+
+**Tried, no gain: holiday flags.** Swedish public holidays plus Midsummer
+Eve, Christmas Eve and New Year's Eve behave like Sundays, so flags for "D
+is a holiday" and "D-1 was a holiday" were added as inputs (`run_lear.py
+--holidays`). Forecast error did not change (MAE 18.1 → 18.0 on the 27
+holidays, 20.6 → 20.6 on other days) and profit changed by −1 ± 2 EUR/day.
+LEAR was already *more* accurate on holidays than on other days, probably
+because low holiday demand shows up in the load forecast. The flags are
+off by default.
+
 **The 15-minute-era dummy.** Before 2025-10-01 the targets are hourly prices
 repeated over four quarter-hours. Because the per-slot models are separate,
 the era dummy learns the mean intra-hour profile. LASSO selects it in 0 % of
@@ -308,36 +330,123 @@ About 14 % of the attainable value lies within the hour. The 15-minute
 forecast captures part of it: it beats its own hourly average by about
 75 EUR/day and wins on 71 % of days.
 
-### Probabilistic forecasts and stochastic bidding
+### Beyond a point forecast: bidding under uncertainty
 
-**Forecast distribution.** Per-slot predictive quantiles are LEAR plus
-empirical quantiles of recent LEAR errors (asinh space, 182-day window,
-pooled over +-2 neighbouring quarter-hours, centred so the median equals
-LEAR). Quantile Regression Averaging (QRA) was evaluated as an alternative
-and was no better. Over the test period the pinball loss is 6.10 (hourly
-era) and 7.28 (15-min era). The 90 % intervals cover 90 % and 87 %, so they
-are slightly narrow in the 15-minute era.
+So far every strategy turns a single price forecast into a fixed schedule:
+"charge 10 MW at 03:00, discharge at 18:00", whatever the prices turn out to
+be. But the forecast is uncertain, and a bid does not have to be fixed. As
+described under *Problem*, a bid can be a curve: sell more if the price
+turns out high, buy more if it turns out low. That raises the question this
+section answers: **is it worth knowing how uncertain the forecast is, and
+bidding curves that react to the actual price?**
 
-**Scenarios.** 50 joint daily price paths per day from a Gaussian copula,
-whose correlation is estimated from rank-normal scores of recent errors with
-Ledoit-Wolf shrinkage. Compared with sampling each quarter-hour independently,
-the copula scenarios score 3 % better on the energy score and 15-23 % better
-on the variogram score, which measures dependence between slots. Scenario
-means are moment-matched to the exact distribution mean.
+Answering it takes three steps:
+
+1. **Forecast a distribution, not just a number:** for each quarter-hour, a
+   range of likely prices around the LEAR forecast.
+2. **Generate scenarios:** plausible full-day price paths (here 50 per day)
+   consistent with those ranges and with how prices move together over the
+   day.
+3. **Optimize the bid curves against all scenarios at once,** so that the
+   curves do well on average over the plausible futures.
+
+The benchmark is the *expected-value* strategy: a fixed schedule optimized
+for the average of the same scenarios. The difference between the two is
+the value of the stochastic solution (VSS; Birge & Louveaux, 2011): what reacting to the actual
+price is worth.
+
+**1. Forecast distribution.** For each quarter-hour, the price range comes
+from LEAR's own recent errors. If over the last 182 days LEAR was within
+±20 EUR/MWh 90 % of the time, the forecast range for tomorrow is LEAR ±
+about 20 at 90 %. Some details:
+
+- Errors are measured on the asinh scale, so ranges are wider at high prices
+  and around spikes.
+- Each quarter-hour pools errors from its neighbours (±2 quarter-hours) for
+  more stable estimates.
+- The ranges are centred so that the middle of the range is the LEAR
+  forecast.
+
+A more elaborate method, Quantile Regression Averaging (QRA; Nowotarski &
+Weron, 2015), was no better.
+Over the test period the 90 % ranges contain the actual price 90 % of the
+time in the hourly era and 87 % in the 15-minute era, so they are slightly
+too narrow lately. Average pinball loss, the standard accuracy score for
+ranges: 6.10 and 7.28 EUR/MWh.
+
+**2. Scenarios.** Sampling each quarter-hour separately from its range would
+give jagged, unrealistic days: price jumps of 100 EUR between neighbouring
+quarter-hours. A battery optimizer would see arbitrage everywhere that never
+happens. Real forecast errors are correlated: if the midday solar dip is
+deeper than forecast at 12:00, it is probably deeper at 14:00 too. So the
+scenarios are sampled with that correlation, estimated from the past 182
+days of LEAR errors.
+
+The tool for this is a *copula*. Sklar's theorem (Sklar, 1959; Nelsen,
+2006) says any joint distribution can be split into its marginals (the
+distribution of each quarter-hour on its own, from step 1) and a copula,
+which describes only how the quarter-hours move together. The two can then
+be modelled separately. A *Gaussian* copula takes the dependence from a
+multivariate normal distribution and nothing else. This is the standard
+way to turn per-period probabilistic forecasts into scenarios in energy
+forecasting, introduced for wind power by Pinson et al. (2009). The recipe:
+
+1. *Estimate the dependence.* For each quarter-hour, rank LEAR's errors
+   over the past 182 days and map the ranks to standard-normal values
+   (rank-based normal scores). Compute the 96 × 96 correlation matrix R of
+   these values. Because 182 days is little data for 96 × 96 correlations,
+   R is shrunk slightly towards zero with the Ledoit-Wolf (2004) estimator.
+2. *Sample.* Draw a 96-dimensional normal vector z with correlation R and
+   convert each component to a probability level u = Φ(z) (Φ the
+   standard-normal CDF). Each u lies between 0 and 1, and neighbouring
+   quarter-hours get similar levels.
+3. *Map to prices.* Read each quarter-hour's price off its own distribution
+   from step 1 at level u: if 12:00 lands at its 10 % level, its price is
+   the 10 % quantile of the 12:00 forecast.
+
+Each scenario thus has exactly the forecast spread in every quarter-hour,
+and correlation between them taken from history. The random draws are
+seeded by date, so every strategy sees the same scenarios. The figure shows
+one day:
 
 ![Scenarios](docs/scenarios_2026-05-28.png)
 
-**Bidding.** Two-stage stochastic program:
+Correlated scenarios (panel B) look like real days; independent sampling
+(panel C) does not. On scores that check whole-day paths rather than single
+quarter-hours, the correlated scenarios are 3 % better on the energy score
+(Gneiting & Raftery, 2007) and 15-23 % better on the variogram score
+(Scheuerer & Hamill, 2015), which specifically checks how well the relation
+between quarter-hours is captured.
 
-- *First stage:* monotone price-quantity curves with K = 8 breakpoints per
-  period, placed at quantiles of the scenario prices.
-- *Second stage:* per-scenario dispatch and SoC, which must be feasible in
-  every scenario.
+One correction: with only 50 scenarios, their average differs from the true
+forecast mean by random noise of several EUR/MWh in each quarter-hour, which
+the optimizer would mistake for real price differences. The scenarios are
+shifted so their average matches the forecast mean exactly. This is a simple
+form of moment matching, a standard scenario-generation technique (Høyland
+& Wallace, 2001).
 
-It is a linear program (LP) with the same battery model as above,
-including c + d ≤ P. Curves are cleared at realized prices; a battery that
-cannot physically deliver what was cleared settles the difference as
-imbalance at a 50 EUR/MWh penalty.
+Limitations: a Gaussian copula has no tail dependence, so it under-represents
+several neighbouring quarter-hours spiking together; a Student-t copula
+would capture that. The correlation is also the same every day, regardless
+of the weather situation.
+
+**3. Bid curves.** One optimization per day chooses:
+
+- *before the auction:* a bid curve for each quarter-hour, as in the
+  *Problem* example, with 8 price points (placed at quantiles of that
+  quarter-hour's scenario prices) and non-decreasing quantities;
+- *for each scenario:* how the battery would then operate, given the
+  quantities the curves clear at that scenario's prices. The state of charge
+  must stay within limits in every scenario.
+
+The objective is the average profit over the 50 scenarios. The battery model
+is the same as above, including c + d ≤ P and the wear cost. In technical
+terms this is a two-stage stochastic linear program (Birge & Louveaux,
+2011); placing curve points at scenario prices follows Fleten & Pettersen
+(2005). The curves are then
+settled at the actual prices. If the actual prices clear an amount the
+battery cannot physically deliver (for example, selling when nearly empty),
+the shortfall is settled as imbalance at a 50 EUR/MWh penalty.
 
 | Strategy (650 days, net of wear) | EUR/day | Share of perfect foresight<br>hourly / 15-min | vs expected value (EUR/day) |
 |---|---:|---:|---:|
@@ -430,3 +539,63 @@ tests/
 
 ENTSO-E Transparency Platform, elprisetjustnu.se (Nord Pool day-ahead prices),
 Svenska kraftnät Mimer (balancing markets, planned).
+
+## References
+
+*Price forecasting*
+
+- Uniejewski, B., Nowotarski, J., Weron, R. (2016). Automated variable
+  selection and shrinkage for day-ahead electricity price forecasting.
+  *Energies* 9(8), 621. (The LEAR model.)
+- Uniejewski, B., Weron, R., Ziel, F. (2018). Variance stabilizing
+  transformations for electricity spot price forecasting. *IEEE Transactions
+  on Power Systems* 33(2), 2219-2229. (The asinh transform.)
+- Lago, J., Marcjasz, G., De Schutter, B., Weron, R. (2021). Forecasting
+  day-ahead electricity prices: A review of state-of-the-art algorithms,
+  best practices and an open-access benchmark. *Applied Energy* 293, 116983.
+  (LEAR as benchmark; `epftoolbox`.)
+- Nowotarski, J., Weron, R. (2015). Computing electricity spot price
+  prediction intervals using quantile regression and forecast averaging.
+  *Computational Statistics* 30(3), 791-803. (QRA.)
+
+*Statistical methods*
+
+- Tibshirani, R. (1996). Regression shrinkage and selection via the lasso.
+  *Journal of the Royal Statistical Society B* 58(1), 267-288.
+- Efron, B., Hastie, T., Johnstone, I., Tibshirani, R. (2004). Least angle
+  regression. *Annals of Statistics* 32(2), 407-499. (LARS.)
+- Zou, H., Hastie, T., Tibshirani, R. (2007). On the "degrees of freedom" of
+  the lasso. *Annals of Statistics* 35(5), 2173-2192. (AIC for LASSO.)
+- Akaike, H. (1974). A new look at the statistical model identification.
+  *IEEE Transactions on Automatic Control* 19(6), 716-723. (AIC.)
+- Ledoit, O., Wolf, M. (2004). A well-conditioned estimator for
+  large-dimensional covariance matrices. *Journal of Multivariate Analysis*
+  88(2), 365-411.
+
+*Copulas, scenarios and scoring*
+
+- Sklar, A. (1959). Fonctions de répartition à n dimensions et leurs marges.
+  *Publications de l'Institut de Statistique de l'Université de Paris* 8,
+  229-231.
+- Nelsen, R. B. (2006). *An Introduction to Copulas*, 2nd ed. Springer.
+- Pinson, P., Madsen, H., Nielsen, H. A., Papaefthymiou, G., Klöckl, B.
+  (2009). From probabilistic forecasts to statistical scenarios of
+  short-term wind power production. *Wind Energy* 12(1), 51-62. (Gaussian
+  copula scenarios from marginal forecasts; the method used here.)
+- Høyland, K., Wallace, S. W. (2001). Generating scenario trees for
+  multistage decision problems. *Management Science* 47(2), 295-307.
+  (Moment matching.)
+- Gneiting, T., Raftery, A. E. (2007). Strictly proper scoring rules,
+  prediction, and estimation. *Journal of the American Statistical
+  Association* 102(477), 359-378. (Pinball loss, energy score.)
+- Scheuerer, M., Hamill, T. M. (2015). Variogram-based proper scoring rules
+  for probabilistic forecasts of multivariate quantities. *Monthly Weather
+  Review* 143(4), 1321-1334.
+
+*Stochastic programming and bidding*
+
+- Birge, J. R., Louveaux, F. (2011). *Introduction to Stochastic
+  Programming*, 2nd ed. Springer. (Two-stage programs, VSS, EVPI.)
+- Fleten, S.-E., Pettersen, E. (2005). Constructing bidding curves for a
+  price-taking retailer in the Norwegian electricity market. *IEEE
+  Transactions on Power Systems* 20(2), 701-708.

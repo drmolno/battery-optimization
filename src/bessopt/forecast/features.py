@@ -9,6 +9,8 @@ features are restricted to information available at gate closure (12:00 D-1):
   gate closure)
 * day-of-week dummies, a 15-min-MTU regime dummy, and a flag for days whose
   exogenous forecasts were missing and imputed
+* optionally (`holidays=True`) Swedish holiday flags for D and D-1; tried,
+  no measurable gain, so off by default
 
 Before 2025-10-01 prices are hourly, so quarter-hour targets (and D-1
 quarter-hour lags) are the hourly price repeated four times. The regime
@@ -28,7 +30,27 @@ from bessopt.data.timegrid import QUARTER_HOUR_GO_LIVE, infer_resolution, to_res
 
 QH_SLOTS = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
 H_SLOTS = [f"{h:02d}:00" for h in range(24)]
-BINARY_PREFIXES = ("dow_", "regime_qh", "exog_imputed")
+BINARY_PREFIXES = ("dow_", "regime_qh", "exog_imputed", "holiday_")
+
+
+def swedish_holidays(days: pd.DatetimeIndex) -> np.ndarray:
+    """1.0 for Swedish public holidays and de facto holidays, else 0.0.
+
+    Public holidays from the ``holidays`` package (Sundays excluded, they have
+    their own day-of-week dummy), plus Midsummer Eve, Christmas Eve and New
+    Year's Eve, which are not official holidays but behave like them.
+    """
+    import holidays
+
+    years = range(days.year.min(), days.year.max() + 1)
+    cal = holidays.Sweden(years=years, include_sundays=False)
+    dates = set(cal.keys())
+    for d, name in cal.items():
+        if name == "Midsommardagen":
+            dates.add(d - dt.timedelta(days=1))
+    for y in years:
+        dates |= {dt.date(y, 12, 24), dt.date(y, 12, 31)}
+    return np.array([d in dates for d in days.date], dtype=float)
 
 
 def daily_matrix(series: pd.Series, freq: str) -> pd.DataFrame:
@@ -83,6 +105,7 @@ def build_dataset(
     neighbours: dict[str, pd.Series],
     load_fc: pd.Series,
     wind_fc: pd.Series,
+    holidays: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (X, Y) indexed by delivery date (naive midnight timestamps).
 
@@ -118,6 +141,12 @@ def build_dataset(
     dow = pd.get_dummies(days.dayofweek, prefix="dow", drop_first=True, dtype=float)
     dow.index = days
     X = X.join(dow)
+    if holidays:
+        # Holiday on D lowers demand; holiday on D-1 makes the D-1 price lags
+        # unrepresentative (as Sunday does for Monday).
+        hol = swedish_holidays(days)
+        X["holiday_d0"] = hol
+        X["holiday_d1"] = np.r_[swedish_holidays(days[:1] - pd.Timedelta(days=1)), hol[:-1]]
     X["regime_qh"] = (days.date >= QUARTER_HOUR_GO_LIVE).astype(float)
     X["exog_imputed"] = (l_miss | w_miss).astype(float)
     X = X.dropna()
@@ -125,7 +154,9 @@ def build_dataset(
     return X, Y.reindex(columns=QH_SLOTS)
 
 
-def load_dataset(start: str | dt.date, end: str | dt.date) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_dataset(
+    start: str | dt.date, end: str | dt.date, holidays: bool = False
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build the dataset from cached ENTSO-E data."""
     from bessopt.data import entsoe
 
@@ -135,7 +166,7 @@ def load_dataset(start: str | dt.date, end: str | dt.date) -> tuple[pd.DataFrame
         z: entsoe.day_ahead_prices(s, e, zone=entsoe.NEIGHBOURS[z]) for z in ("SE3", "DK2", "DE_LU")
     }
     ws = entsoe.wind_solar_forecast(s, e)
-    return build_dataset(prices, nb, entsoe.load_forecast(s, e), ws["wind_onshore"])
+    return build_dataset(prices, nb, entsoe.load_forecast(s, e), ws["wind_onshore"], holidays)
 
 
 def is_binary(columns: pd.Index) -> np.ndarray:

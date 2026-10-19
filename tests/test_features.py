@@ -42,6 +42,21 @@ def test_features_of_day_d_do_not_depend_on_prices_of_day_d(prices):
     assert Y2.loc[d].mean() > 500
 
 
+def test_swedish_holidays_include_eves_but_not_sundays():
+    from bessopt.forecast.features import swedish_holidays
+
+    days = pd.to_datetime(["2025-06-20", "2025-06-21", "2025-12-24", "2025-12-31", "2025-06-22", "2025-06-23"])
+    # Midsummer Eve, Midsummer Day, Christmas Eve, New Year's Eve; a Sunday; a Monday.
+    np.testing.assert_array_equal(swedish_holidays(days), [1, 1, 1, 1, 0, 0])
+
+
+def test_holiday_flags_for_d_and_d_minus_1(prices):
+    X, _ = build_dataset(**_inputs(prices), holidays=True)
+    assert X.loc["2025-11-01", "holiday_d0"] == 1  # All Saints' Day
+    assert X.loc["2025-11-02", "holiday_d1"] == 1
+    assert X.loc["2025-11-02", "holiday_d0"] == 0
+
+
 def test_daily_matrix_handles_dst_and_hourly_era(prices):
     Y = daily_matrix(prices, "15min")
     assert list(Y.columns) == QH_SLOTS
