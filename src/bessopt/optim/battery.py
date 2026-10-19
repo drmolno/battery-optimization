@@ -5,23 +5,30 @@ For periods :math:`t = 0..T-1` with length :math:`\Delta_t` (hours) and price
 
 .. math::
 
-    \max_{c, d, e, z}\; & \sum_t \lambda_t \Delta_t (d_t - c_t)
-                         - \kappa \sum_t \Delta_t d_t \\
-    \text{s.t.}\;\;     & e_{t+1} = e_t + \Delta_t(\eta_c c_t - d_t/\eta_d),
-                          \quad e_0 = \bar e_0 \\
-                        & \underline e \le e_t \le \overline e,
-                          \quad e_T \ge e_{\text{term}} \\
-                        & 0 \le c_t \le P z_t,\quad 0 \le d_t \le P(1 - z_t),
-                          \quad z_t \in \{0, 1\}
+    \max_{c, d, e}\; & \sum_t \lambda_t \Delta_t (d_t - c_t)
+                      - \kappa \sum_t \Delta_t d_t \\
+    \text{s.t.}\;\;  & e_{t+1} = e_t + \Delta_t(\eta_c c_t - d_t/\eta_d),
+                       \quad e_0 = \bar e_0 \\
+                     & \underline e \le e_t \le \overline e,
+                       \quad e_T \ge e_{\text{term}} \\
+                     & c_t, d_t \ge 0,\quad c_t + d_t \le P
 
-where :math:`c, d` are charge/discharge power (MW), :math:`e` is stored energy
-(MWh) and :math:`\kappa` a throughput degradation cost.
+where :math:`c, d` are period-average charge/discharge power (MW), :math:`e`
+is stored energy (MWh) and :math:`\kappa` a throughput degradation cost.
 
-The binary :math:`z` rules out simultaneous charging and discharging. With
-non-negative prices the LP relaxation already has an optimum without it
-(doing both wastes energy at a cost), but with negative prices the relaxation
-can profitably "burn" energy through round-trip losses, which a real battery
-cannot do at scale. ``relax_binaries=True`` exposes that behaviour.
+**Power rule.** The inverter carries power one way at a time but can switch
+direction within a period, so the battery may charge for part of a period and
+discharge for the rest. Averaged over the period this is exactly
+:math:`c + d \le P` (``power_rule="shared"``, the default). It allows
+intra-period cycling, which wastes energy through real round-trip losses and
+pays only at negative prices; the degradation cost decides whether it is
+worth it. Alternatives, for comparison:
+
+* ``"exclusive"``: one direction per period (binary variable); slightly
+  stricter than physics.
+* ``"independent"``: :math:`c \le P,\ d \le P` separately. Unphysical (full
+  power in and out simultaneously), so the model "burns" energy at negative
+  prices faster than a real battery can.
 """
 
 from __future__ import annotations
@@ -65,11 +72,13 @@ class DeterministicDispatch:
         self,
         spec: BatterySpec = BatterySpec(),
         solver: str | None = None,
-        relax_binaries: bool = False,
+        power_rule: str = "shared",
     ):
+        if power_rule not in ("shared", "exclusive", "independent"):
+            raise ValueError(power_rule)
         self.spec = spec
         self.solver = (solver or default_solver()).upper()
-        self.relax_binaries = relax_binaries
+        self.power_rule = power_rule
         self._problems: dict[int, tuple[cp.Problem, dict]] = {}
 
     def _build(self, T: int) -> tuple[cp.Problem, dict]:
@@ -90,7 +99,9 @@ class DeterministicDispatch:
             e[1:] <= s.soc_max,
             e[T] >= soc_term,
         ]
-        if self.relax_binaries:
+        if self.power_rule == "shared":
+            cons += [c + d <= s.power_mw]
+        elif self.power_rule == "independent":
             cons += [c <= s.power_mw, d <= s.power_mw]
         else:
             z = cp.Variable(T, boolean=True, name="is_charging")

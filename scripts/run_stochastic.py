@@ -78,7 +78,7 @@ def main() -> None:
         st.name = f"stochastic_K{K}"
         strategies.append(st)
     if args.exact:
-        st = StochasticCurves(source, spec, args.solver, n_points=args.points[0], relax_binaries=False)
+        st = StochasticCurves(source, spec, args.solver, n_points=args.points[0], power_rule="exclusive")
         st.name = f"stochastic_K{args.points[0]}_exact"
         strategies.append(st)
 

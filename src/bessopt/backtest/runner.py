@@ -79,7 +79,9 @@ def settle_curves(
     """Clear bid curves at realized prices and simulate physical delivery.
 
     Curves are cleared period by period, so the cleared quantities need not
-    be SoC-feasible. The battery follows them as far as physically possible;
+    be SoC-feasible. The battery follows them as far as physically possible,
+    including switching direction within a period (c + d <= P) to absorb a
+    purchase when nearly full;
     the deviation ``delta = cleared - delivered`` is settled in the imbalance
     market, approximated as the day-ahead price worsened by
     ``imbalance_penalty`` (EUR/MWh). The net effect on revenue is
@@ -92,12 +94,27 @@ def settle_curves(
     T = len(p)
     c, d, soc = np.zeros(T), np.zeros(T), np.empty(T)
     e = soc0
+    P, ec, ed = spec.power_mw, spec.eta_charge, 1.0 / spec.eta_discharge
     for t in range(T):
         if y_bid[t] >= 0:
-            d[t] = min(y_bid[t], spec.power_mw, max(e - spec.soc_min, 0.0) * spec.eta_discharge / dt_h[t])
+            d[t] = min(y_bid[t], P, max(e - spec.soc_min, 0.0) / (ed * dt_h[t]))
         else:
-            c[t] = min(-y_bid[t], spec.power_mw, max(spec.soc_max - e, 0.0) / (spec.eta_charge * dt_h[t]))
-        e = e + dt_h[t] * (spec.eta_charge * c[t] - d[t] / spec.eta_discharge)
+            # Absorb b MW net. If the battery is too full, switch direction
+            # within the period (c + d <= P): the round-trip losses absorb the
+            # excess, which can take up to ~(1/eta_d - eta_c)/2 of P net when
+            # completely full.
+            b = min(-y_bid[t], P)
+            room = max(spec.soc_max - e, 0.0) / dt_h[t]  # MW of storable energy rate
+            if ec * b <= room:
+                c[t] = b
+            else:
+                delta = (ec * b - room) / (ed - ec)  # extra cycling needed
+                if b + 2 * delta <= P:
+                    c[t], d[t] = b + delta, delta
+                else:  # full-power cycling; absorb as much as possible
+                    b = max((2 * room + (ed - ec) * P) / (ec + ed), 0.0)
+                    c[t], d[t] = (P + b) / 2, (P - b) / 2
+        e = e + dt_h[t] * (ec * c[t] - ed * d[t])
         soc[t] = e
     delta = y_bid - (d - c)
     revenue = float(p * dt_h @ (d - c))

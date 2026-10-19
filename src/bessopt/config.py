@@ -48,9 +48,14 @@ class BatterySpec:
     soc_min_frac: float = 0.05
     soc_max_frac: float = 0.95
     soc_init_frac: float = 0.50
-    # Degradation cost per MWh of energy discharged (EUR/MWh). A crude
-    # throughput model: cell replacement cost / lifetime throughput.
-    degradation_eur_per_mwh: float = 5.0
+    # Wear cost per MWh discharged (EUR/MWh), a throughput model:
+    #   cell replacement cost / lifetime discharged energy
+    #   = 20 MWh x 80 kEUR/MWh / (7,000 cycles x 18 MWh usable) ~ 13,
+    # rounded up to 15. Assumptions: LFP stationary packs ~70 USD/kWh (BNEF
+    # 2025) plus installation; 6,000-10,000 cycles to 70-80 % capacity.
+    # Plausible range about 8-22. The optimizer plans with this value as is;
+    # no safety margin is built in.
+    degradation_eur_per_mwh: float = 15.0
 
     @property
     def eta_charge(self) -> float:

@@ -3,16 +3,58 @@
 Optimal day-ahead bidding and dispatch of a grid-scale battery (10 MW / 20 MWh)
 in bidding zone SE4, with honest out-of-sample backtesting.
 
-**Status:** work in progress. Data layer, deterministic MILP dispatch, a
-15-minute LEAR price forecaster and backtests are done; probabilistic
-forecasting and stochastic bidding are next.
+**Status:** work in progress. Done: data layer, deterministic dispatch optimization,
+a 15-minute LEAR price forecaster, probabilistic forecasts with copula
+scenarios, two-stage stochastic bidding, and out-of-sample backtests of all
+strategies. Next: degradation modelling, FCR-D co-optimization and project
+economics (see Roadmap).
 
 ## Problem
 
-Each day before 12:00 CET, the battery operator submits bids for each of the
-next day's 96 quarter-hours (24 hours before 2025-10-01) without knowing the
-prices. Profit depends on the realized prices, the battery's physics and how
-much uncertainty the bidding strategy accounts for.
+Each day before 12:00 CET (gate closure), the battery operator submits bids
+to the Nord Pool day-ahead auction for each of the next day's 96 quarter-hours
+(24 hours before 2025-10-01).
+
+**What a bid is.** For one delivery period, a bid is a list of price-quantity
+pairs: how much energy the operator is willing to sell (discharge) or buy
+(charge) at each price. For example:
+
+| Price (EUR/MWh) | ≤ 20 | 70 | 120 | ≥ 200 |
+|---|---:|---:|---:|---:|
+| Net quantity (MW) | buy 10 | 0 | sell 8 | sell 10 |
+
+Quantities between the listed prices are interpolated linearly: at 95,
+halfway between 70 and 120, the bid is to sell 4 MW. A sell
+quantity at 120 means "willing to sell at any price of 120 or more".
+
+**What happens next.** At about 12:45 the auction publishes one clearing price
+per period for the whole zone. Each bid is then a binding commitment: if the
+18:00-18:15 price clears at 120, the operator *must* sell 8 MW during that
+quarter-hour (2 MWh), and is paid the clearing price for every MWh. All
+participants get the same clearing price, not the price they bid
+(uniform pricing). Delivering less than committed has to be settled in the
+imbalance market, typically at a worse price.
+
+A fixed schedule ("sell 8 MW at 18:00 whatever the price") is the special
+case of a flat curve.
+
+**The battery.** All results use one hypothetical battery:
+
+| Parameter | Symbol | Value |
+|---|---|---|
+| Power rating (max charge or discharge power) | P | 10 MW |
+| Energy capacity | E | 20 MWh |
+| Usable state of charge (SoC) | | 5-95 % of E, i.e. 1-19 MWh |
+| Round-trip efficiency (charge and discharge losses split evenly) | η_c, η_d | 90 % (√0.9 ≈ 0.95 each way) |
+| SoC at the start of the backtest; minimum SoC at the end of each day | | 50 % (10 MWh) |
+| Wear cost per MWh discharged | κ | 15 EUR/MWh (see *Battery wear*) |
+
+The battery is assumed small enough that its bids do not move the market
+price (price-taker).
+
+**The problem.** Bids must be fixed before the prices are known. Profit
+depends on the realized prices, the battery's physical limits (power,
+energy, efficiency) and how the bids handle the uncertainty about prices.
 
 ## Design principles
 
@@ -22,21 +64,40 @@ much uncertainty the bidding strategy accounts for.
 - **Settlement at realized prices.** Strategies output a schedule; the backtest
   settles it against actual prices, with state of charge carried across days.
 - **Native resolution.** The series spans the hourly to 15-minute switch
-  (2025-10-01) and DST days (23/25 h); the time grid is handled explicitly.
-- **Binary charge/discharge exclusion.** SE4 prices go negative, and then the
-  LP relaxation "burns" energy by charging and discharging simultaneously
-  (see `tests/test_battery.py`).
+  (2025-10-01) and the daylight-saving-time changeover days, which have 23
+  or 25 hours (92 or 100 quarter-hours); the time grid is handled
+  explicitly.
+- **Charging plus discharging within a period cannot exceed the inverter
+  rating.** The model tracks charging power c and discharging power d
+  separately, because conversion losses differ by direction. Power flows one
+  way at a time, but the battery can switch direction within a period:
+  charge for part of the 15 minutes, discharge for the rest. Since c and d
+  are averages over the period, this is a time budget: c + d ≤ P, where P is
+  the power rating (10 MW). For example, 5 minutes charging and 10 minutes
+  discharging at full power gives c = 3.3 and d = 6.7 MW.
+
+  Switching within a period wastes energy through real round-trip losses
+  (about 10 %), which pays only at negative prices, when you are paid to
+  consume. In SE4 negative prices occurred on 104 of 651 days since January
+  2025 (2 % of all periods). Whether wasting energy is worth it is then
+  decided by the wear cost (see *Battery wear*). Without the shared limit
+  (c ≤ P and d ≤ P separately) the model would run full power in and out
+  at once, which is unphysical, and on a day at −100 EUR/MWh would report
+  1.5x the attainable profit (`tests/test_battery.py`).
 
 ## Results (SE4, out-of-sample 2025-01-01 to 2026-10-12, 650 days)
 
 Each strategy forecasts prices, optimizes the next day's schedule with the
-same MILP, and is settled at realized prices.
+same battery model (wear cost 15 EUR/MWh), and is settled at realized
+prices.
+
+Profit is net of wear. All strategies cycle about 1.4 times per day.
 
 | Strategy | EUR/day | Share of perfect foresight<br>hourly era / 15-min era / overall |
 |---|---:|---:|
-| Perfect foresight (upper bound) | 2,007 | 100 % |
-| Naive: tomorrow = today | 1,356 | 71 % / 65 % / 68 % |
-| LEAR point forecast | 1,622 | 85 % / 78 % / 81 % |
+| Perfect foresight (upper bound) | 1,701 | 100 % |
+| Naive: tomorrow = today | 1,059 | 65 % / 61 % / 62 % |
+| LEAR point forecast | 1,343 | 83 % / 77 % / 79 % |
 
 Forecast accuracy (MAE in EUR/MWh at native resolution; rMAE relative to naive):
 
@@ -48,17 +109,63 @@ Forecast accuracy (MAE in EUR/MWh at native resolution; rMAE relative to naive):
 Observations:
 
 - The daily price *shape* is so persistent that the naive forecast already
-  captures two-thirds of the attainable value.
-- A 40 % lower MAE buys only 13 percentage points of profit capture: arbitrage
+  captures about 60 % of the attainable value.
+- A 40 % lower MAE buys 17 percentage points of profit capture: arbitrage
   value depends on ranking cheap and expensive periods, not on absolute error.
   The remaining gap to perfect foresight motivates scenario-based bidding.
 - In the 15-minute era, both forecasts capture a smaller *share* of perfect
-  foresight, but LEAR earns more in absolute terms (about 1,660 vs 1,570
+  foresight, but LEAR earns more in absolute terms (about 1,385 vs 1,285
   EUR/day). The benchmark rose because intra-hour variation became
   tradable (see below). The eras also differ in season and volatility, so
   this is not a controlled comparison.
-- Degradation is a 5 EUR/MWh throughput cost, giving about 1.7 cycles per
-  day. That is probably optimistic and will be revisited.
+
+### Battery wear
+
+Each MWh discharged costs a wear charge κ, a throughput model:
+
+$$
+\kappa = \frac{\text{cell replacement cost}}{\text{lifetime discharged energy}}
+\approx \frac{20\ \text{MWh} \times 80\ \text{kEUR/MWh}}{7{,}000\ \text{cycles} \times 18\ \text{MWh}}
+\approx 13 \to 15\ \text{EUR/MWh}.
+$$
+
+Assumptions:
+
+- *Cell cost:* stationary LFP packs at about 70 USD/kWh (BloombergNEF 2025
+  survey), plus installation.
+- *Cycle life:* 6,000-10,000 full cycles before capacity falls to 70-80 %.
+
+These are simplifying, non-expert assumptions from public sources, so the
+plausible range is wide, about 8-22 EUR/MWh. Calendar aging does not depend
+on operation and belongs in the project economics. Cycle-depth effects are
+ignored. The optimizer plans with κ = 15, with no extra safety margin.
+
+To check the choice, the optimizer was run with a range of assumed wear
+costs, and every run was charged the true cost (LEAR forecast, 650 days):
+
+| Planning wear cost (EUR/MWh) | 0 | 5 | 10 | **15** | 20 | 30 | 50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Cycles per day | 2.2 | 1.8 | 1.5 | 1.4 | 1.3 | 1.1 | 0.8 |
+| Net profit at true 15 (EUR/day) | 1,116 | 1,271 | 1,323 | 1,343 | 1,346 | 1,304 | 1,135 |
+| Net profit at true 8 (EUR/day) | 1,430 | 1,517 | 1,537 | 1,538 | 1,527 | 1,459 | 1,243 |
+| Net profit at true 22 (EUR/day) | 803 | 1,025 | 1,109 | 1,148 | 1,165 | 1,149 | 1,028 |
+
+- **Ignoring wear is expensive.** Planning with κ = 0 cycles 2.2 times a day
+  and loses about 230 EUR/day against planning with the true cost.
+- **Under perfect foresight the best planning cost equals the true cost**,
+  as theory says. For the forecast-based strategy the optimum is slightly
+  above it (by about 3 EUR/day; flat around the optimum). Cycling on
+  forecast spreads carries risk the strategy does not account for. That is
+  reported here but deliberately *not* built in by inflating κ; a principled
+  treatment is risk-aware bidding (see Roadmap).
+- **Wasting energy at negative prices never paid in SE4.** A round trip that
+  discharges 1 MWh loses about 0.11 MWh, so at price p it earns about
+  0.11·|p| against a wear cost of κ. That pays only below about −135 EUR/MWh
+  at κ = 15. SE4's lowest price since 2021 is −60 EUR/MWh. In the backtests
+  the optimizer never switches direction within a period (0 of 42,743
+  periods, for both perfect foresight and LEAR). Switching can still occur
+  when bid curves are settled, where it lets a nearly full battery honour a
+  committed purchase instead of paying for imbalance.
 
 ### Forecaster: LEAR at 15-minute resolution
 
@@ -85,14 +192,14 @@ actual 15-minute prices.
 
 | Strategy | EUR/day | Share of perfect foresight |
 |---|---:|---:|
-| Perfect foresight, 15-min | 2,127 | 100 % |
-| Perfect foresight, hourly-constant schedules | 1,827 | 86 % |
-| LEAR, 15-min forecast | 1,658 | 78 % |
-| LEAR, forecast averaged to hourly | 1,570 | 74 % |
+| Perfect foresight, 15-min | 1,807 | 100 % |
+| Perfect foresight, hourly-constant schedules | 1,561 | 86 % |
+| LEAR, 15-min forecast | 1,385 | 77 % |
+| LEAR, forecast averaged to hourly | 1,311 | 73 % |
 
 About 14 % of the attainable value lies within the hour. The 15-minute
 forecast captures part of it: it beats its own hourly average by about
-90 EUR/day and wins on 71 % of days.
+75 EUR/day and wins on 71 % of days.
 
 ### Probabilistic forecasts and stochastic bidding
 
@@ -120,29 +227,32 @@ means are moment-matched to the exact distribution mean.
 - *Second stage:* per-scenario dispatch and SoC, which must be feasible in
   every scenario.
 
-It is solved as an LP using the convex hull `c + d <= P` of the
-charge/discharge exclusion. Against the exact MILP (lazy binaries) the
-in-sample gap is 0.5 % at about 60x the cost. Curves are cleared at realized
-prices; any dispatch that is physically infeasible is settled as imbalance
-at a 50 EUR/MWh penalty.
+It is a linear program (LP) with the same battery model as above,
+including c + d ≤ P. Curves are cleared at realized prices; a battery that
+cannot physically deliver what was cleared settles the difference as
+imbalance at a 50 EUR/MWh penalty.
 
-| Strategy (650 days) | EUR/day | Share of PF<br>hourly / 15-min | vs expected value |
+| Strategy (650 days, net of wear) | EUR/day | Share of perfect foresight<br>hourly / 15-min | vs expected value (EUR/day) |
 |---|---:|---:|---:|
-| LEAR point forecast (≈ predictive median) | 1,623 | 85.4 % / 78.1 % | +16.4 |
-| Stochastic curves, K = 8, S = 50 | 1,609 | 84.7 % / 77.3 % | +2.1 ± 0.9 |
-| Expected value: schedule on predictive mean | 1,607 | 84.7 % / 77.2 % | 0 |
+| LEAR point forecast (= predictive median) | 1,343 | 82.6 % / 76.6 % | +9.2 ± 4.6 |
+| Stochastic curves, K = 8, S = 50 | 1,334 | 82.5 % / 75.9 % | +0.4 ± 1.0 |
+| Expected value: schedule on predictive mean | 1,334 | 82.5 % / 75.9 % | 0 |
+
+(± is one standard error over days.)
 
 Findings:
 
-- **Value of the stochastic solution (VSS) is about 0.1 %.** Price-dependent
-  curves beat the expected-value schedule by 2.1 ± 0.9 EUR/day (out of
-  sample). The curves were imbalanced for only 0.75 EUR/day on average.
-- **Median beats mean.** The schedule on the predictive median (LEAR) beats
-  the schedule on the predictive mean by 16 ± 5 EUR/day. Theory says the mean
-  should win for a fixed schedule, since profit is linear in price. On
-  average the mean is in fact better calibrated (bias −1.0 vs −2.9 EUR/MWh),
-  so the difference likely comes from how errors are placed within the day,
-  not from overall bias. This is open.
+- **The value of the stochastic solution (VSS) is zero within noise.**
+  Price-dependent curves beat the expected-value schedule by 0.4 ± 1.0
+  EUR/day out of sample. Imbalance from infeasible dispatch cost only
+  0.6 EUR/day. In an earlier run with a lower wear cost (5 EUR/MWh) the gain
+  was 2 EUR/day (0.1 %), so it is small either way.
+- **Median beats mean, marginally.** The schedule on the predictive median
+  (LEAR) beats the schedule on the predictive mean by 9 ± 5 EUR/day, about
+  two standard errors. Theory says the mean should win for a fixed schedule,
+  since profit is linear in price. On average the mean is in fact better
+  calibrated (bias −1.0 vs −2.9 EUR/MWh), so the difference likely comes from
+  how errors are placed within the day, not from overall bias. This is open.
 - **Interpretation.** For a price-taking 10 MW battery in day-ahead alone,
   almost all of the attainable value comes from forecasting the daily price
   shape. Reacting to realized prices through bid curves adds little, because
@@ -154,13 +264,17 @@ Findings:
 
 ## Roadmap
 
-1. ~~Data layer, time grid, deterministic MILP, baseline backtests~~
+1. ~~Data layer, time grid, deterministic dispatch, baseline backtests~~
 2. ~~ENTSO-E features (load and wind forecasts, neighbouring zones), 15-minute LEAR~~
 3. ~~Probabilistic forecasts (empirical residuals, QRA) and copula scenarios~~
 4. ~~Two-stage stochastic bidding with price-quantity curves; VSS~~
-5. Degradation modelling, terminal SoC valuation
-6. Joint day-ahead + FCR-D capacity allocation
-7. Project economics: NPV/IRR with capex, opex, grid fees, capacity fade and
+5. ~~Wear cost (throughput model) and intra-period switching~~; still open:
+   terminal SoC valuation, cycle-depth-dependent wear
+6. Risk-aware bidding: account for forecast risk explicitly (e.g. a CVaR
+   term in the stochastic program) instead of implicitly through cost
+   parameters
+7. Joint day-ahead + FCR-D capacity allocation
+8. Project economics: NPV/IRR with capex, opex, grid fees, capacity fade and
    cell replacement; sensitivity to capex, degradation cost and spread
    compression
 
@@ -188,7 +302,7 @@ license; set `BESSOPT_SOLVER=GUROBI` to use Gurobi.
 ```
 src/bessopt/
   config.py             battery spec, paths, solver selection
-  data/timegrid.py      gate closure, resolution handling, DST
+  data/timegrid.py      gate closure, resolution handling, daylight saving
   data/cache.py         monthly parquet cache
   data/elpris.py        SE prices from elprisetjustnu.se (no key)
   data/entsoe.py        ENTSO-E prices, load and RES forecasts
@@ -196,7 +310,7 @@ src/bessopt/
   forecast/lear.py      LEAR model and rolling out-of-sample loop
   forecast/evaluate.py  MAE / rMAE at native resolution
   forecast/probabilistic.py  quantiles (ER, QRA), Gaussian copula, scoring
-  optim/battery.py      deterministic dispatch MILP (cvxpy, DPP-parametrized)
+  optim/battery.py      deterministic dispatch LP (cvxpy, DPP-parametrized)
   optim/stochastic.py   two-stage stochastic bid curves (K-point grid)
   backtest/             strategies, rolling backtest, settlement
 scripts/                runnable experiments

@@ -28,11 +28,10 @@ SoC must stay feasible in every scenario.
 
 plus the per-scenario battery constraints of :mod:`bessopt.optim.battery`.
 
-**Charge/discharge exclusion.** By default the LP uses ``c + d <= P``, the
-convex hull of the exclusion constraint. Any "energy dumping" the LP then
-relies on is not available at settlement, which simulates the physical
-battery, so it shows up there as imbalance. ``relax_binaries=False`` solves
-the exact MILP with lazy binaries.
+**Power rule.** As in :mod:`bessopt.optim.battery`, ``power_rule="shared"``
+(default) uses ``c + d <= P``: the battery may switch direction within a
+period, and settlement simulates the same physics. ``"exclusive"`` forbids
+switching within a period and is solved as a MILP with lazy binaries.
 
 **Lazy binaries.** Charge/discharge exclusion with S x T binaries is
 expensive (50 x 96 = 4800). Overlap is only profitable where it relaxes the
@@ -139,7 +138,7 @@ class StochasticBidding:
         spec: BatterySpec = BatterySpec(),
         solver: str | None = None,
         n_points: int | None = 8,
-        relax_binaries: bool = True,
+        power_rule: str = "shared",
         mip_gap: float = 1e-4,
         max_lazy_rounds: int = 10,
         verbose: bool = False,
@@ -150,7 +149,9 @@ class StochasticBidding:
         self.by_period = by_period
         self.spec = spec
         self.solver = (solver or default_solver()).upper()
-        self.relax_binaries = relax_binaries
+        if power_rule not in ("shared", "exclusive"):
+            raise ValueError(power_rule)
+        self.power_rule = power_rule
         self.mip_gap = mip_gap
         self.max_lazy_rounds = max_lazy_rounds
 
@@ -216,7 +217,7 @@ class StochasticBidding:
             prob.solve(solver=self.solver, **kwargs)
             if prob.status not in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 raise RuntimeError(f"Stochastic bidding problem {prob.status}")
-            if self.relax_binaries:
+            if self.power_rule == "shared":
                 break
             overlap = np.minimum(c.value, d.value) > 1e-4
             if self.verbose:

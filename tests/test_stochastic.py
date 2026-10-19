@@ -27,7 +27,7 @@ def _scenarios(S, T=24, seed=0):
 def test_single_scenario_matches_deterministic(solver):
     X = _scenarios(1)
     grid = _grid()
-    stoch = StochasticBidding(SPEC, solver, relax_binaries=False).solve(X, grid)
+    stoch = StochasticBidding(SPEC, solver).solve(X, grid)
     det = DeterministicDispatch(SPEC, solver).solve(pd.Series(X[0], index=grid))
     assert stoch.expected_profit_eur == pytest.approx(det.profit_eur, rel=1e-4, abs=1e-2)
 
@@ -36,7 +36,7 @@ def test_single_scenario_matches_deterministic(solver):
 def test_curves_are_monotone_and_feasible_in_every_scenario(solver):
     X = _scenarios(20)
     grid = _grid()
-    res = StochasticBidding(SPEC, solver, relax_binaries=False).solve(X, grid)
+    res = StochasticBidding(SPEC, solver, power_rule="exclusive").solve(X, grid)
     assert (np.diff(res.curves.quantities, axis=1) >= -1e-6).all()
     for s in range(len(X)):
         _, stats = settle_curves(res.curves, pd.Series(X[s], index=grid), SPEC, SPEC.soc_init)

@@ -49,17 +49,30 @@ def test_soc_limits_and_power_limits_hold(solver):
     assert s[["charge_mw", "discharge_mw"]].max().max() <= SPEC.power_mw + 1e-6
 
 
-def test_negative_prices_relaxation_burns_energy_milp_does_not(solver):
-    # With strongly negative prices, being paid to consume makes simultaneous
-    # charge+discharge profitable in the LP relaxation (round-trip losses
-    # "consume" energy). The MILP forbids it.
+def test_power_rules_at_negative_prices(solver):
+    # Paid to consume, every rule wastes energy, at different rates:
+    # "independent" (full power in and out simultaneously, unphysical) >
+    # "shared" (switching within a period, c + d <= P) >= "exclusive"
+    # (one direction per period).
     p = _prices([-100.0] * 24)
-    lp = DeterministicDispatch(SPEC, solver, relax_binaries=True).solve(p)
-    milp = DeterministicDispatch(SPEC, solver).solve(p)
-    overlap = lambda r: np.minimum(r.schedule["charge_mw"], r.schedule["discharge_mw"]).sum()
-    assert overlap(lp) > 1.0
-    assert overlap(milp) == pytest.approx(0.0, abs=1e-6)
-    assert lp.profit_eur > milp.profit_eur
+    res = {r: DeterministicDispatch(SPEC, solver, power_rule=r).solve(p) for r in ("independent", "shared", "exclusive")}
+    s = {r: x.schedule for r, x in res.items()}
+    overlap = lambda sch: np.minimum(sch["charge_mw"], sch["discharge_mw"]).sum()
+    assert overlap(s["exclusive"]) == pytest.approx(0.0, abs=1e-6)
+    assert ((s["shared"]["charge_mw"] + s["shared"]["discharge_mw"]) <= SPEC.power_mw + 1e-6).all()
+    assert res["independent"].profit_eur > 1.4 * res["shared"].profit_eur
+    assert res["shared"].profit_eur >= res["exclusive"].profit_eur - 1e-6
+    assert res["shared"].profit_eur < 1.05 * res["exclusive"].profit_eur
+
+
+def test_wear_cost_makes_negative_price_cycling_unprofitable(solver):
+    # Each 10 MWh round trip at -100 EUR/MWh earns about 100 EUR via losses;
+    # with a wear cost of 20 EUR per discharged MWh, cycling no longer pays,
+    # and the battery only fills up.
+    p = _prices([-100.0] * 24)
+    worn = DeterministicDispatch(BatterySpec(degradation_eur_per_mwh=20.0), solver).solve(p)
+    assert worn.schedule["discharge_mw"].sum() == pytest.approx(0.0, abs=1e-6)
+    assert worn.soc_end == pytest.approx(SPEC.soc_max, abs=1e-6)
 
 
 def test_problem_is_reused_across_solves(solver):
