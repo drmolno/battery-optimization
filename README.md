@@ -56,6 +56,43 @@ price (price-taker).
 depends on the realized prices, the battery's physical limits (power,
 energy, efficiency) and how the bids handle the uncertainty about prices.
 
+## What is being optimized
+
+**The real objective** is the expected discounted cash flow over the
+battery's life: daily market revenue, minus the upfront investment and
+any cell replacement. Two states link the days:
+
+- *State of charge* (fast): energy carried from one day into the next.
+- *State of health* (slow): every MWh discharged uses up part of a finite
+  cycle budget; when it is spent, or calendar aging ends the life, the cells
+  must be replaced.
+
+Prices are uncertain and revealed one day at a time, so in principle this is
+a stochastic dynamic program over years.
+
+**What the code solves** is one day at a time, a receding-horizon scheme.
+Each day maximizes that day's revenue plus an *approximate* value of the
+battery's state at the end of the day. The approximation has two parts, and
+both are engineering estimates rather than derived quantities:
+
+1. **Wear: a linear cost κ per MWh discharged.** Formally this is the
+   Lagrange multiplier of the lifetime cycle budget: dualizing "total
+   throughput ≤ budget" splits the lifetime problem into independent daily
+   problems "revenue − κ · throughput". With the right κ these daily
+   decisions are optimal over the lifetime (for a convex problem). The right
+   κ is the marginal value of a cycle; we *estimate* it as replacement cost
+   divided by lifetime throughput (see *Battery wear*). If calendar aging
+   would end the life before the cycle budget runs out, the true κ is lower.
+2. **Stored energy: a floor instead of a value.** Each day must end at
+   least 50 % full. This stands in for the value of energy carried
+   overnight and is the more heuristic of the two. A proper version would
+   value end-of-day energy by the expected next-day spread.
+
+Both are on the roadmap: estimate κ adaptively so cumulative throughput
+tracks the cycle budget, and replace the 50 % floor by a value of stored
+energy. All reported profits are for this daily scheme, settled at real
+prices.
+
 ## Design principles
 
 - **Information discipline.** Strategies only see data published before gate
@@ -91,7 +128,10 @@ Each strategy forecasts prices, optimizes the next day's schedule with the
 same battery model (wear cost 15 EUR/MWh), and is settled at realized
 prices.
 
-Profit is net of wear. All strategies cycle about 1.4 times per day.
+Profit is net of wear. All strategies cycle about 1.4 times per day. The
+wear charge (see *Battery wear*) is a decision cost representing used-up
+cycle life, not a cash expense; payback and NPV will be computed from cash
+flows (revenue before wear, capex, cell replacement) in the economics step.
 
 | Strategy | EUR/day | Share of perfect foresight<br>hourly era / 15-min era / overall |
 |---|---:|---:|
@@ -269,7 +309,9 @@ Findings:
 3. ~~Probabilistic forecasts (empirical residuals, QRA) and copula scenarios~~
 4. ~~Two-stage stochastic bidding with price-quantity curves; VSS~~
 5. ~~Wear cost (throughput model) and intra-period switching~~; still open:
-   terminal SoC valuation, cycle-depth-dependent wear
+   value of end-of-day stored energy instead of the 50 % floor, κ estimated
+   adaptively as a shadow price (cumulative throughput tracking the cycle
+   budget), cycle-depth-dependent wear
 6. Risk-aware bidding: account for forecast risk explicitly (e.g. a CVaR
    term in the stochastic program) instead of implicitly through cost
    parameters
