@@ -5,7 +5,8 @@ import pytest
 from bessopt.config import MARKET_TZ, BatterySpec
 from bessopt.optim.battery import DeterministicDispatch
 
-SPEC = BatterySpec(degradation_eur_per_mwh=0.0)
+# Hand calculations below assume ending each horizon at least at the start level.
+SPEC = BatterySpec(degradation_eur_per_mwh=0.0, soc_end_min_frac=0.5)
 
 
 def _prices(values, freq="h", start="2025-06-01"):

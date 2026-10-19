@@ -7,14 +7,14 @@ bidding methods capture that value. Each strategy is backtested over 650
 days (January 2025 to October 2026) on days the models had not seen, with
 profits settled at real prices. Main findings:
 
-- A LASSO-based price forecast (LEAR) captures **79 %** of the profit
-  available with perfect foresight (1,343 vs 1,701 EUR/day after wear),
-  against 62 % for the naive forecast "tomorrow's prices equal today's".
+- A LASSO-based price forecast (LEAR) captures **82 %** of the profit
+  available with perfect foresight (1,492 vs 1,814 EUR/day after wear),
+  against 67 % for the naive forecast "tomorrow's prices equal today's".
 - Bidding price-dependent curves based on probabilistic price scenarios adds
-  **nothing measurable** over a fixed schedule (+0.4 ± 1.0 EUR/day). For
+  **nothing measurable** over a fixed schedule (+0.6 ± 2.1 EUR/day). For
   this battery the value lies in forecasting the daily price shape.
 - **Battery wear** has to be priced into the decisions: planning without it
-  would cycle 2.2 times a day instead of 1.4 and lose about 230 EUR/day.
+  would cycle 1.9 times a day instead of 1.3 and lose about 180 EUR/day.
 
 **Status:** work in progress. Next steps are combining day-ahead trading
 with a frequency reserve market and the project economics (see
@@ -75,7 +75,7 @@ All results use one hypothetical battery:
 | Energy capacity | E | 20 MWh |
 | Usable state of charge (SoC) | | 5-95 % of E, i.e. 1-19 MWh |
 | Round-trip efficiency (charge and discharge losses split evenly) | η_c, η_d | 90 % (√0.9 ≈ 0.95 each way) |
-| SoC at the start of the backtest; minimum SoC at the end of each day | | 50 % (10 MWh) |
+| SoC at the start of the backtest | | 50 % (10 MWh) |
 | Wear cost per MWh discharged | κ | 15 EUR/MWh (Appendix C) |
 
 The battery is assumed small enough that its bids do not move the market
@@ -122,9 +122,11 @@ Section 1:
   κ = 15 EUR/MWh: the cost of replacing the cells, spread over the energy
   they can deliver in their life (Appendix C). This lets each daily decision
   weigh a trade against the battery life it uses up.
-- **End-of-day level.** Each day ends at least 50 % full, so the battery
-  starts every day ready to trade instead of selling everything in the
-  evening.
+
+Each day starts from the state of charge at which the previous day ended,
+which is known at gate closure: the previous day's bids and prices are
+already fixed by then.
+
 ### 2.3 Price forecasts
 
 - **Naive:** tomorrow's prices equal today's, period by period.
@@ -184,13 +186,13 @@ solution (VSS): what bidding curves that react to the actual price is worth.
 
 ### 3.1 Forecast accuracy and profit
 
-Profit after wear, 650 days. All strategies cycle about 1.4 times per day.
+Profit after wear, 650 days. All strategies cycle about 1.3 times per day.
 
 | Strategy | EUR/day | Share of perfect foresight<br>hourly era / 15-min era / overall |
 |---|---:|---:|
-| Perfect foresight | 1,701 | 100 % |
-| Naive | 1,059 | 65 % / 61 % / 62 % |
-| LEAR | 1,343 | 83 % / 77 % / 79 % |
+| Perfect foresight | 1,814 | 100 % |
+| Naive | 1,221 | 70 % / 65 % / 67 % |
+| LEAR | 1,492 | 86 % / 80 % / 82 % |
 
 Forecast accuracy as mean absolute error (MAE) in EUR/MWh, and relative MAE
 (rMAE = LEAR's MAE divided by the naive forecast's MAE; below 1 means better
@@ -202,12 +204,12 @@ than naive):
 | 15-min (Oct 2025 onwards) | 36.3 | 21.9 | 0.60 |
 
 - The daily price *shape* is so persistent that the naive forecast already
-  captures about 60 % of the attainable value.
-- A 40 % lower MAE buys 17 percentage points of profit: what matters for the
+  captures about two thirds of the attainable value.
+- A 40 % lower MAE buys 15 percentage points of profit: what matters for the
   battery is ranking cheap and expensive periods correctly, not the absolute
   error.
 - In the 15-minute era both forecasts capture a smaller *share* of perfect
-  foresight, but LEAR earns more in absolute terms (about 1,385 vs 1,285
+  foresight, but LEAR earns more in absolute terms (about 1,540 vs 1,425
   EUR/day). The benchmark rose because price variation within the hour
   became tradable (Section 3.2). The eras also differ in season and
   volatility, so this is not a controlled comparison.
@@ -219,28 +221,28 @@ settled at actual 15-minute prices:
 
 | Strategy | EUR/day | Share of perfect foresight |
 |---|---:|---:|
-| Perfect foresight, 15-min | 1,807 | 100 % |
-| Perfect foresight, hourly-constant schedules | 1,561 | 86 % |
-| LEAR, 15-min forecast | 1,385 | 77 % |
-| LEAR, forecast averaged to hourly | 1,311 | 73 % |
+| Perfect foresight, 15-min | 1,930 | 100 % |
+| Perfect foresight, hourly-constant schedules | 1,710 | 89 % |
+| LEAR, 15-min forecast | 1,543 | 80 % |
+| LEAR, forecast averaged to hourly | 1,479 | 77 % |
 
-About 14 % of the attainable value lies within the hour. The 15-minute
+About 11 % of the attainable value lies within the hour. The 15-minute
 forecast captures part of it: it beats its own hourly average by about
-75 EUR/day and wins on 71 % of days.
+65 EUR/day and wins on 68 % of days.
 
 ### 3.3 Bidding under uncertainty
 
 | Strategy (650 days, after wear) | EUR/day | Share of perfect foresight<br>hourly / 15-min | vs expected value (EUR/day) |
 |---|---:|---:|---:|
-| LEAR (= middle of the forecast distribution) | 1,343 | 82.6 % / 76.6 % | +9.2 ± 4.6 |
-| Stochastic curves | 1,334 | 82.5 % / 75.9 % | +0.4 ± 1.0 |
-| Expected value | 1,334 | 82.5 % / 75.9 % | 0 |
+| LEAR (= middle of the forecast distribution) | 1,493 | 86.1 % / 80.0 % | +9.2 ± 4.6 |
+| Stochastic curves | 1,484 | 85.8 % / 79.4 % | +0.6 ± 2.1 |
+| Expected value | 1,484 | 85.6 % / 79.4 % | 0 |
 
 (± is one standard error over days.)
 
 - **The value of the stochastic solution is zero within noise.** The curves
-  beat the expected-value schedule by 0.4 ± 1.0 EUR/day. Imbalance from
-  undeliverable cleared amounts cost only 0.6 EUR/day. With a lower wear
+  beat the expected-value schedule by 0.6 ± 2.1 EUR/day. Imbalance from
+  undeliverable cleared amounts cost only 0.7 EUR/day. With a lower wear
   cost (5 EUR/MWh) the gain was 2 EUR/day (0.1 %), so it is small either way.
 - **The forecast median beats the forecast mean, marginally:** by 9 ± 5
   EUR/day, about two standard errors. For a fixed schedule profit is linear
@@ -262,13 +264,13 @@ plausible range (Appendix C).
 
 | Planning wear cost (EUR/MWh) | 0 | 5 | 10 | **15** | 20 | 30 | 50 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Cycles per day | 2.2 | 1.8 | 1.5 | 1.4 | 1.3 | 1.1 | 0.8 |
-| Profit at true 15 (EUR/day) | 1,116 | 1,271 | 1,323 | 1,343 | 1,346 | 1,304 | 1,135 |
-| Profit at true 8 (EUR/day) | 1,430 | 1,517 | 1,537 | 1,538 | 1,527 | 1,459 | 1,243 |
-| Profit at true 22 (EUR/day) | 803 | 1,025 | 1,109 | 1,148 | 1,165 | 1,149 | 1,028 |
+| Cycles per day | 1.9 | 1.6 | 1.4 | 1.3 | 1.2 | 1.1 | 0.8 |
+| Profit at true 15 (EUR/day) | 1,313 | 1,434 | 1,473 | 1,492 | 1,495 | 1,465 | 1,326 |
+| Profit at true 8 (EUR/day) | 1,584 | 1,655 | 1,674 | 1,678 | 1,670 | 1,620 | 1,444 |
+| Profit at true 22 (EUR/day) | 1,041 | 1,213 | 1,272 | 1,306 | 1,321 | 1,310 | 1,209 |
 
-- **Ignoring wear is expensive.** Planning without it cycles 2.2 times a day
-  and loses about 230 EUR/day against planning with the true cost.
+- **Ignoring wear is expensive.** Planning without it cycles 1.9 times a day
+  and loses about 180 EUR/day against planning with the true cost.
 - **With forecasts, a slightly higher planning cost earns a little more.**
   With perfect foresight the best planning cost equals the true cost. With
   LEAR, planning with 20 instead of 15 earns about 3 EUR/day more. The
@@ -278,6 +280,24 @@ plausible range (Appendix C).
 - **Wasting energy at negative prices never paid in SE4** (Appendix D): it
   would need prices below about −135 EUR/MWh, and the lowest SE4 price since
   2021 is −60 EUR/MWh.
+
+### 3.5 Energy held overnight
+
+A natural extra rule is to require each day to end with some energy in
+stock, for example at least 50 % full. It turns out to be costly:
+
+| Minimum level at end of day | Perfect foresight (EUR/day) | LEAR (EUR/day) | Average level at midnight |
+|---|---:|---:|---:|
+| 50 % | 1,701 | 1,343 | 10 MWh |
+| 25 % | 1,777 | 1,438 | 5 MWh |
+| 5 % (normal limit only) | 1,814 | 1,492 | 1 MWh |
+
+With a 50 % minimum, the battery must refill after the evening peak *before*
+midnight, at late-evening prices (83 EUR/MWh on average at 21-24h).
+Without it, the battery ends the day nearly empty and refills *after*
+midnight, in the cheapest hours of the night (59 EUR/MWh on average at
+00-05h), still ahead of the morning peak. All results in this README use
+the normal 5 % limit only.
 
 ## 4. Conclusions and future work
 
@@ -309,10 +329,10 @@ Future work:
 3. **Risk-aware bidding.** Account for forecast risk explicitly, e.g. by
    also rewarding the conditional value-at-risk (CVaR) in the stochastic
    program: the average profit over the worst few percent of scenarios.
-4. **Battery model.** Value end-of-day stored energy by tomorrow's expected
-   price spread instead of the 50 % minimum; adjust κ over time so that
-   cumulative cycling tracks the cycle budget; wear that depends on cycle
-   depth.
+4. **Battery model.** Plan over two days (the bid day and a forecast of the
+   next) and commit only the first, so that energy carried past midnight is
+   valued; adjust κ over time so that cumulative cycling tracks the cycle
+   budget; wear that depends on cycle depth.
 5. **Forecasting.** Weekday-specific weights in LEAR, a Student-t copula for
    clustered price spikes, and correlation that depends on the weather
    situation (Appendices A and B).

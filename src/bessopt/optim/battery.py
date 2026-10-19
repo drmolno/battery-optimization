@@ -121,10 +121,9 @@ class DeterministicDispatch:
     ) -> DispatchResult:
         """Optimize over the horizon spanned by ``prices`` (EUR/MWh).
 
-        ``soc_terminal`` defaults to the initial SoC of the spec, i.e. the
-        battery must end each horizon at least as full as a fresh start. This
-        prevents the optimizer from selling the stored energy "for free" at
-        the end of every day.
+        ``soc_terminal`` defaults to ``spec.soc_end_min`` (50 % by default):
+        the minimum state of charge at the end of the horizon. This keeps the
+        optimizer from selling all stored energy at the end of every day.
         """
         s = self.spec
         T = len(prices)
@@ -134,7 +133,7 @@ class DeterministicDispatch:
 
         dt = period_hours(prices.index)
         soc0 = s.soc_init if soc0 is None else soc0
-        soc_terminal = s.soc_init if soc_terminal is None else soc_terminal
+        soc_terminal = s.soc_end_min if soc_terminal is None else soc_terminal
         h["price_dt"].value = prices.to_numpy(dtype=float) * dt
         h["dt"].value = dt
         h["soc0"].value = float(np.clip(soc0, 0.0, s.energy_mwh))

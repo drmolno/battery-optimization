@@ -48,6 +48,12 @@ class BatterySpec:
     soc_min_frac: float = 0.05
     soc_max_frac: float = 0.95
     soc_init_frac: float = 0.50
+    # Minimum state of charge at the end of each day (fraction of capacity).
+    # 5 % = the normal lower limit, i.e. no extra end-of-day rule: a 50 %
+    # minimum forces refilling before midnight at late-evening prices instead
+    # of after midnight at the cheapest night prices, and costs about 11 %
+    # profit (scripts/run_end_level.py).
+    soc_end_min_frac: float = 0.05
     # Wear cost per MWh discharged (EUR/MWh), a throughput model:
     #   cell replacement cost / lifetime discharged energy
     #   = 20 MWh x 80 kEUR/MWh / (7,000 cycles x 18 MWh usable) ~ 13,
@@ -76,3 +82,7 @@ class BatterySpec:
     @property
     def soc_init(self) -> float:
         return self.soc_init_frac * self.energy_mwh
+
+    @property
+    def soc_end_min(self) -> float:
+        return max(self.soc_end_min_frac * self.energy_mwh, self.soc_min)

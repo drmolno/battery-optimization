@@ -174,7 +174,7 @@ class StochasticBidding:
         S, T = scenarios.shape
         dt = period_hours(index)
         soc0 = s.soc_init if soc0 is None else soc0
-        soc_term = s.soc_init if soc_terminal is None else soc_terminal
+        soc_term = s.soc_end_min if soc_terminal is None else soc_terminal
         soc_term = min(soc_term, s.soc_max, soc0 + s.eta_charge * s.power_mw * dt.sum())
 
         grid = price_grid(scenarios, self.n_points)  # (T, K)
