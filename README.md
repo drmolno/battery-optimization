@@ -592,57 +592,58 @@ tests/
 
 - Uniejewski, B., Nowotarski, J., Weron, R. (2016). Automated variable
   selection and shrinkage for day-ahead electricity price forecasting.
-  *Energies* 9(8), 621. (The LEAR model.)
+  *Energies* 9(8), 621. [doi:10.3390/en9080621](https://doi.org/10.3390/en9080621) (The LEAR model.)
 - Uniejewski, B., Weron, R., Ziel, F. (2018). Variance stabilizing
   transformations for electricity spot price forecasting. *IEEE Transactions
-  on Power Systems* 33(2), 2219-2229. (The asinh transform.)
+  on Power Systems* 33(2), 2219-2229. [doi:10.1109/TPWRS.2017.2734563](https://doi.org/10.1109/TPWRS.2017.2734563) (The asinh transform.)
 - Lago, J., Marcjasz, G., De Schutter, B., Weron, R. (2021). Forecasting
   day-ahead electricity prices: A review of state-of-the-art algorithms,
   best practices and an open-access benchmark. *Applied Energy* 293, 116983.
-  (LEAR as benchmark; `epftoolbox`.)
+  [doi:10.1016/j.apenergy.2021.116983](https://doi.org/10.1016/j.apenergy.2021.116983) (LEAR as benchmark; `epftoolbox`.)
 - Nowotarski, J., Weron, R. (2015). Computing electricity spot price
   prediction intervals using quantile regression and forecast averaging.
-  *Computational Statistics* 30(3), 791-803. (QRA.)
+  *Computational Statistics* 30(3), 791-803. [doi:10.1007/s00180-014-0523-0](https://doi.org/10.1007/s00180-014-0523-0) (QRA.)
 
 *Statistical methods*
 
 - Tibshirani, R. (1996). Regression shrinkage and selection via the lasso.
-  *Journal of the Royal Statistical Society B* 58(1), 267-288.
+  *Journal of the Royal Statistical Society: Series B (Methodological)* 58(1),
+  267-288. [doi:10.1111/j.2517-6161.1996.tb02080.x](https://doi.org/10.1111/j.2517-6161.1996.tb02080.x)
 - Efron, B., Hastie, T., Johnstone, I., Tibshirani, R. (2004). Least angle
-  regression. *Annals of Statistics* 32(2), 407-499. (LARS.)
+  regression. *Annals of Statistics* 32(2), 407-499. [doi:10.1214/009053604000000067](https://doi.org/10.1214/009053604000000067) (LARS.)
 - Zou, H., Hastie, T., Tibshirani, R. (2007). On the "degrees of freedom" of
-  the lasso. *Annals of Statistics* 35(5), 2173-2192. (AIC for LASSO.)
+  the lasso. *Annals of Statistics* 35(5), 2173-2192. [doi:10.1214/009053607000000127](https://doi.org/10.1214/009053607000000127) (AIC for LASSO.)
 - Akaike, H. (1974). A new look at the statistical model identification.
-  *IEEE Transactions on Automatic Control* 19(6), 716-723. (AIC.)
+  *IEEE Transactions on Automatic Control* 19(6), 716-723. [doi:10.1109/TAC.1974.1100705](https://doi.org/10.1109/TAC.1974.1100705) (AIC.)
 - Ledoit, O., Wolf, M. (2004). A well-conditioned estimator for
   large-dimensional covariance matrices. *Journal of Multivariate Analysis*
-  88(2), 365-411.
+  88(2), 365-411. [doi:10.1016/S0047-259X(03)00096-4](https://doi.org/10.1016/S0047-259X(03)00096-4)
 
 *Copulas, scenarios and scoring*
 
 - Sklar, A. (1959). Fonctions de répartition à n dimensions et leurs marges.
   *Publications de l'Institut de Statistique de l'Université de Paris* 8,
   229-231.
-- Nelsen, R. B. (2006). *An Introduction to Copulas*, 2nd ed. Springer.
+- Nelsen, R. B. (2006). *An Introduction to Copulas*, 2nd ed. Springer. [doi:10.1007/0-387-28678-0](https://doi.org/10.1007/0-387-28678-0)
 - Pinson, P., Madsen, H., Nielsen, H. A., Papaefthymiou, G., Klöckl, B.
   (2009). From probabilistic forecasts to statistical scenarios of
-  short-term wind power production. *Wind Energy* 12(1), 51-62. (Gaussian
+  short-term wind power production. *Wind Energy* 12(1), 51-62. [doi:10.1002/we.284](https://doi.org/10.1002/we.284) (Gaussian
   copula scenarios from marginal forecasts; the method used here.)
 - Høyland, K., Wallace, S. W. (2001). Generating scenario trees for
-  multistage decision problems. *Management Science* 47(2), 295-307.
+  multistage decision problems. *Management Science* 47(2), 295-307. [doi:10.1287/mnsc.47.2.295.9834](https://doi.org/10.1287/mnsc.47.2.295.9834)
   (Moment matching.)
 - Gneiting, T., Raftery, A. E. (2007). Strictly proper scoring rules,
   prediction, and estimation. *Journal of the American Statistical
-  Association* 102(477), 359-378. (Pinball loss, energy score.)
+  Association* 102(477), 359-378. [doi:10.1198/016214506000001437](https://doi.org/10.1198/016214506000001437) (Pinball loss, energy score.)
 - Scheuerer, M., Hamill, T. M. (2015). Variogram-based proper scoring rules
   for probabilistic forecasts of multivariate quantities. *Monthly Weather
-  Review* 143(4), 1321-1334.
+  Review* 143(4), 1321-1334. [doi:10.1175/MWR-D-14-00269.1](https://doi.org/10.1175/MWR-D-14-00269.1)
 
 *Stochastic programming and bidding*
 
 - Birge, J. R., Louveaux, F. (2011). *Introduction to Stochastic
-  Programming*, 2nd ed. Springer. (Two-stage programs, value of the
+  Programming*, 2nd ed. Springer. [doi:10.1007/978-1-4614-0237-4](https://doi.org/10.1007/978-1-4614-0237-4) (Two-stage programs, value of the
   stochastic solution.)
 - Fleten, S.-E., Pettersen, E. (2005). Constructing bidding curves for a
   price-taking retailer in the Norwegian electricity market. *IEEE
-  Transactions on Power Systems* 20(2), 701-708.
+  Transactions on Power Systems* 20(2), 701-708. [doi:10.1109/TPWRS.2005.846082](https://doi.org/10.1109/TPWRS.2005.846082)
