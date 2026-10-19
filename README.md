@@ -343,12 +343,26 @@ Future work:
 model,
 
 $$
-\tilde y_{D,h} = \beta_h^\top \tilde x_D + \varepsilon_{D,h}, \qquad
-\hat\beta_h = \arg\min_\beta \sum_{d} \big(\tilde y_{d,h} - \beta^\top \tilde x_d\big)^2 + \lambda_h \lVert\beta\rVert_1 ,
+\tilde y_{D,h} = \beta_h^\top \tilde x_D + \varepsilon_{D,h},
 $$
 
-so the 18:00 price can depend on the inputs differently from the 03:00
-price. All 96 models see the same input vector x̃_D. LASSO (least absolute
+with coefficients fitted as
+
+$$
+\hat\beta_h = \arg\min_\beta \sum_{d \in \mathcal{W}} \left(\tilde y_{d,h} - \beta^\top \tilde x_d\right)^2 + \lambda_h \lVert\beta\rVert_1 ,
+$$
+
+where
+
+- ỹ_{d,h} is the (transformed, see below) price of quarter-hour h on day d;
+- x̃_d is the vector of (transformed) inputs for day d, all known at its
+  gate closure;
+- 𝒲 is the training window: the days of the last two years before D whose
+  prices are known;
+- λ_h ≥ 0 is the penalty weight.
+
+Separate models let the 18:00 price depend on the inputs differently from
+the 03:00 price; all 96 models use the same inputs. LASSO (least absolute
 shrinkage and selection operator; Tibshirani, 1996) is the absolute-value
 penalty λ_h‖β‖₁, which sets most coefficients exactly to zero. The penalty
 λ_h is chosen per model by AIC (Akaike information criterion; Akaike, 1974)
@@ -376,12 +390,12 @@ hours would drive the coefficients. A log transform would tame them, but it
 is undefined for zero and negative prices. The area hyperbolic sine,
 
 $$
-\mathrm{asinh}(z) = \ln\!\big(z + \sqrt{z^2 + 1}\big)
-\;\approx\; \begin{cases} z & |z| \text{ small}, \\ \mathrm{sign}(z)\,\ln(2|z|) & |z| \text{ large}, \end{cases}
+\mathrm{asinh}(z) = \ln\left(z + \sqrt{z^2 + 1}\right),
 $$
 
-behaves like the identity near zero and like a log for large values, on
-both sides. It compresses spikes and keeps negative prices. Each price
+behaves like the identity near zero (asinh(z) ≈ z for small |z|) and like
+a log for large values, on both sides (asinh(z) ≈ sign(z)·ln(2|z|) for
+large |z|). It compresses spikes and keeps negative prices. Each price
 series is first centred and scaled with robust statistics from the training
 window, z = (price − median) / MAD (median absolute deviation), so that
 "near zero" means "a typical price". The models are fitted on asinh(z), and
