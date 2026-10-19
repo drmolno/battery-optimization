@@ -209,22 +209,89 @@ costs, and every run was charged the true cost (LEAR forecast, 650 days):
 
 ### Forecaster: LEAR at 15-minute resolution
 
-96 per-slot LASSO-ARX models (Lago et al., 2021) on asinh-transformed prices.
-They are refit weekly on a rolling 2-year window, with the penalty chosen by
-AIC along the LARS path. The 344 candidate features are all known at gate
-closure:
+**LEAR = LASSO-Estimated AutoRegressive model.** It is a linear regression
+of tomorrow's price on many past prices (the *autoregressive* part) and on
+other information such as load and wind forecasts, fitted with the LASSO.
+The LASSO adds a penalty on the absolute size of the coefficients, which
+sets most of them exactly to zero, so the data picks the few inputs that
+matter. LEAR was proposed by Uniejewski, Nowotarski and Weron (2016). Lago,
+Marcjasz, De Schutter and Weron (2021) made it the reference benchmark for
+day-ahead price forecasting, with an open implementation (`epftoolbox`).
+The design here follows their setup; differences are listed below.
 
-- SE4 prices of D-1 (15 min) and D-2, D-3, D-7 (hourly);
-- D-1 prices in SE3, DK2 and DE-LU;
-- TSO load and wind forecasts for D and D-1;
+**One model per delivery period.** Each of the 96 quarter-hours of day D
+gets its own linear model,
+
+$$
+\tilde y_{D,h} = \beta_h^\top \tilde x_D + \varepsilon_{D,h}, \qquad
+\hat\beta_h = \arg\min_\beta \sum_{d} \big(\tilde y_{d,h} - \beta^\top \tilde x_d\big)^2 + \lambda_h \lVert\beta\rVert_1 ,
+$$
+
+so the 18:00 price can depend on the inputs differently from the 03:00
+price. All 96 models see the same input vector x̃_D. The penalty λ_h is
+chosen per model by AIC (Akaike information criterion) along the LARS path,
+the sequence of LASSO solutions as λ decreases.
+
+**Inputs** (344 candidates, all known at gate closure, 12:00 on D-1):
+
+- SE4 prices of D-1 (all 96 quarter-hours) and D-2, D-3, D-7 (hourly);
+- D-1 prices in the coupled zones SE3, DK2 and DE-LU (hourly);
+- the grid operator's load and wind forecasts for D and D-1 (hourly);
 - day-of-week dummies;
-- a 15-minute-era dummy.
+- a 15-minute-era dummy (1 from 2025-10-01), and a flag for the 9 days whose
+  load or wind forecast was missing and filled from the previous day.
 
-Before 2025-10-01 the targets are hourly prices repeated over four
-quarter-hours. Because the per-slot models are separate, the era dummy learns
-the mean intra-hour profile. LASSO selects it in 0 % of slots in January 2025,
-41 % in November 2025 and 75 % in October 2026, as 15-minute data fills the
-window.
+A median of about 48 inputs survive per model.
+
+**The asinh transformation.** Electricity prices are heavy-tailed: mostly
+moderate, with occasional spikes to several hundred EUR/MWh and sometimes
+negative values. Least squares is dominated by the spikes, so a few extreme
+hours would drive the coefficients. A log transform would tame them, but it
+is undefined for zero and negative prices. The area hyperbolic sine,
+
+$$
+\operatorname{asinh}(z) = \ln\!\big(z + \sqrt{z^2 + 1}\big)
+\;\approx\; \begin{cases} z & |z| \text{ small}, \\ \operatorname{sign}(z)\,\ln(2|z|) & |z| \text{ large}, \end{cases}
+$$
+
+behaves like the identity near zero and like a log for large values, on
+both sides. It compresses spikes and keeps negative prices.
+
+Each price series is first centred and scaled with robust statistics from
+the training window, z = (price − median) / MAD (median absolute deviation),
+so that "near zero" means "a typical price". The models are fitted on
+asinh(z), and forecasts are mapped back with sinh. This transformation for
+electricity prices was studied by Uniejewski, Weron and Ziel (2018), *IEEE
+Transactions on Power Systems*. Lago et al. (2021) use it as the default
+in LEAR. Inputs are transformed the same way, except dummies.
+
+A side effect: back-transforming the fitted mean of asinh(z) gives
+something close to the *median* of the price, not its mean, because sinh is
+nonlinear. This is why the LEAR forecast is treated as the predictive
+median in the probabilistic section.
+
+**Training.** Rolling 2-year window, refit weekly, forecasts every day. Only
+days whose prices are known at gate closure enter the training set.
+Constant and duplicate input columns are dropped per window: before the
+15-minute switch the four quarter-hour lags of an hour are identical copies,
+which breaks the LARS algorithm.
+
+**Differences from Lago et al. (2021):**
+
+| | Lago et al. | Here |
+|---|---|---|
+| Periods per day | 24 hourly models | 96 quarter-hour models |
+| Refitting | daily | weekly (daily is about 7x slower) |
+| Training window | several windows (56 days to 4 years), forecasts averaged | one 2-year window |
+| Exogenous inputs | 2 market-specific forecasts for D, D-1, D-7 | load and wind for D, D-1, plus neighbouring-zone prices |
+| Penalty | AIC on the LARS path, then refit with coordinate descent | AIC on the LARS path, solution taken directly from the path (same estimate in principle) |
+| Extra | | 15-minute-era dummy, imputation flag |
+
+**The 15-minute-era dummy.** Before 2025-10-01 the targets are hourly prices
+repeated over four quarter-hours. Because the per-slot models are separate,
+the era dummy learns the mean intra-hour profile. LASSO selects it in 0 % of
+slots in January 2025, 41 % in November 2025 and 75 % in October 2026, as
+15-minute data fills the window.
 
 **Does the 15-minute forecast pay off?** The table below covers the 15-minute
 era (2025-10-01 to 2026-10-12, same days). All schedules are settled at
