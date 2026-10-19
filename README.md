@@ -269,11 +269,12 @@ plausible range (Appendix C).
 
 - **Ignoring wear is expensive.** Planning without it cycles 2.2 times a day
   and loses about 230 EUR/day against planning with the true cost.
-- **With perfect foresight the best planning cost equals the true cost.**
-  For the forecast-based strategy the optimum is slightly above it (by about
-  3 EUR/day; flat around the optimum), because cycling on forecast spreads
-  carries risk the strategy does not account for. This is reported, not
-  built in by inflating κ; risk-aware bidding is future work.
+- **With forecasts, a slightly higher planning cost earns a little more.**
+  With perfect foresight the best planning cost equals the true cost. With
+  LEAR, planning with 20 instead of 15 earns about 3 EUR/day more. The
+  optimizer selects cycles whose *forecast* spread beats the wear cost, and
+  the marginal ones are often selected because the forecast overstated the
+  spread; a higher planning cost skips them.
 - **Wasting energy at negative prices never paid in SE4** (Appendix D): it
   would need prices below about −135 EUR/MWh, and the lowest SE4 price since
   2021 is −60 EUR/MWh.
@@ -355,8 +356,8 @@ hours would drive the coefficients. A log transform would tame them, but it
 is undefined for zero and negative prices. The area hyperbolic sine,
 
 $$
-\operatorname{asinh}(z) = \ln\!\big(z + \sqrt{z^2 + 1}\big)
-\;\approx\; \begin{cases} z & |z| \text{ small}, \\ \operatorname{sign}(z)\,\ln(2|z|) & |z| \text{ large}, \end{cases}
+\mathrm{asinh}(z) = \ln\!\big(z + \sqrt{z^2 + 1}\big)
+\;\approx\; \begin{cases} z & |z| \text{ small}, \\ \mathrm{sign}(z)\,\ln(2|z|) & |z| \text{ large}, \end{cases}
 $$
 
 behaves like the identity near zero and like a log for large values, on
