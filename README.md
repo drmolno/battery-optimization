@@ -125,10 +125,6 @@ Section 1:
 - **End-of-day level.** Each day ends at least 50 % full, so the battery
   starts every day ready to trade instead of selling everything in the
   evening.
-
-Day after day, this is a receding-horizon scheme, as in model predictive
-control.
-
 ### 2.3 Price forecasts
 
 - **Naive:** tomorrow's prices equal today's, period by period.
