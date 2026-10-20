@@ -16,6 +16,11 @@ profits settled at real prices. Main findings:
 - **Battery wear** has to be priced into the decisions: planning without it
   would cycle 1.9 times a day instead of 1.3 and lose about 180 EUR/day.
 
+![Cumulative profit](docs/cumulative_profit.png)
+
+*Cumulative profit after wear, every day settled at real prices. Perfect
+foresight is an upper bound that no strategy can reach.*
+
 **Status:** work in progress. Next steps are combining day-ahead trading
 with a frequency reserve market and the project economics (see
 *Conclusions and future work*).
@@ -587,6 +592,7 @@ python scripts/run_probabilistic.py --start 2025-01-01 --end 2026-10-13
 python scripts/run_stochastic.py --start 2025-01-01 --end 2026-10-13 --moment-match --tag full
 python scripts/run_resolution_check.py                # Section 3.2
 python scripts/run_wear.py                            # Section 3.4
+python scripts/plot_cumulative.py                     # summary figure
 ```
 
 `run_probabilistic.py` needs out-of-sample LEAR forecasts for a calibration
