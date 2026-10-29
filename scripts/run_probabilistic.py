@@ -13,7 +13,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 
 import numpy as np
 import pandas as pd
@@ -22,7 +21,6 @@ from bessopt.config import RESULTS_DIR
 from bessopt.data import entsoe
 from bessopt.forecast.features import daily_matrix
 from bessopt.forecast.probabilistic import (
-    TAUS,
     copula_correlation,
     energy_score,
     pinball,

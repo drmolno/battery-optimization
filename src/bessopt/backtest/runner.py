@@ -10,7 +10,6 @@ import pandas as pd
 
 from bessopt.backtest.strategies import Strategy
 from bessopt.config import BatterySpec
-from bessopt.optim.stochastic import BidCurves
 from bessopt.data.timegrid import (
     day_bounds,
     gate_closure,
@@ -18,6 +17,7 @@ from bessopt.data.timegrid import (
     price_publication_time,
     split_by_delivery_day,
 )
+from bessopt.optim.stochastic import BidCurves
 
 
 @dataclass

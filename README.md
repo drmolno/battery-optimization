@@ -1,5 +1,7 @@
 # Battery bidding in the Swedish day-ahead market (SE4)
 
+[![CI](https://github.com/drmolno/battery-optimization/actions/workflows/ci.yml/badge.svg)](https://github.com/drmolno/battery-optimization/actions/workflows/ci.yml)
+
 **Summary.** This project studies how much a grid-scale battery
 (10 MW / 20 MWh) can earn by trading in the day-ahead electricity market in
 bidding zone SE4 (southern Sweden, around Malmö), and which forecasting and

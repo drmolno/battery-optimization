@@ -98,7 +98,7 @@ def rolling_quantiles(
             if len(cal) < calib_days // 2:
                 raise ValueError(f"Only {len(cal)} calibration days before {d:%Y-%m-%d}")
             scalers = [AsinhScaler().fit(Y.loc[cal, s].to_numpy()[:, None]) for s in slots]
-            tf = lambda j, v: scalers[j].transform(np.asarray(v, float)[:, None])[:, 0]
+            tf = lambda j, v, scalers=scalers: scalers[j].transform(np.asarray(v, float)[:, None])[:, 0]
             if method == "qra":
                 coefs = Parallel(n_jobs=n_jobs)(
                     delayed(_qra_slot)(

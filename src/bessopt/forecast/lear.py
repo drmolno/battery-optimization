@@ -33,7 +33,7 @@ MAD_TO_STD = 1.4826  # MAD of a standard normal is 1/1.4826
 class AsinhScaler:
     """Column-wise median/MAD normalization followed by asinh."""
 
-    def fit(self, Z: np.ndarray) -> "AsinhScaler":
+    def fit(self, Z: np.ndarray) -> AsinhScaler:
         self.med = np.median(Z, axis=0)
         mad = MAD_TO_STD * np.median(np.abs(Z - self.med), axis=0)
         self.mad = np.where(mad > 1e-9, mad, 1.0)
@@ -58,7 +58,7 @@ class LEAR:
         self.criterion = criterion
         self.n_jobs = n_jobs
 
-    def fit(self, X: pd.DataFrame, Y: pd.DataFrame) -> "LEAR":
+    def fit(self, X: pd.DataFrame, Y: pd.DataFrame) -> LEAR:
         # LARS breaks on exactly tied columns. In training windows within the
         # hourly era, the four D-1 quarter-hour lags of each hour are identical
         # and regime_qh is constant, so drop constant and duplicate columns.

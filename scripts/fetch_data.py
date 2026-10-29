@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import pairwise
 
 import pandas as pd
 
@@ -36,7 +37,7 @@ def main() -> None:
         series[f"prices {name}"] = lambda s, e, code=code: entsoe.day_ahead_prices(s, e, zone=code)
 
     bounds = [start, *pd.date_range(start, end, freq="YS", inclusive="neither"), end]
-    chunks = list(zip(bounds[:-1], bounds[1:]))
+    chunks = list(pairwise(bounds))
 
     jobs = {}
     with ThreadPoolExecutor(args.workers) as pool:

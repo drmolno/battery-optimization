@@ -99,4 +99,4 @@ def test_rolling_forecast_trains_only_on_past(prices):
                              model_factory=Spy, verbose=False)
     assert len(fc) == 7
     fit_days = pd.date_range("2025-11-01", periods=7)[::3]
-    assert all(last < d for last, d in zip(seen, fit_days))
+    assert all(last < d for last, d in zip(seen, fit_days, strict=True))
